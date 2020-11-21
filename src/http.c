@@ -3,9 +3,9 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <zconf.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <unistd.h>
 
 #include "logging.h"
 
