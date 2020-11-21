@@ -40,8 +40,8 @@ static struct tcp_conn *accept_conn(struct tcp_conn_table *conn_table, int liste
         LOG_FATAL("accept() failed errno=%d (%s)", errno, strerror(errno));
     }
 
-    char ip[INET_ADDRSTRLEN + 1];
-    inet_ntop(AF_INET, &client_addr.sin_addr, ip, INET_ADDRSTRLEN + 1);
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &client_addr.sin_addr, ip, INET_ADDRSTRLEN);
 
     struct tcp_conn *conn = new_tcp_conn(conn_table, fd, ip, client_addr.sin_port);
     if (conn == 0) {
@@ -87,7 +87,7 @@ static void recv_from_conn(struct http_req_queue *req_queue, struct tcp_conn_tab
     LOG_DEBUG("Received %zu bytes from %s:%d (fd=%d)", num_bytes, conn->ip, conn->port, conn->fd);
     conn->buf_len += num_bytes;
     conn->buf[conn->buf_len] = 0;
-    int bytes_read = read_http_reqs(req_queue, &conn->cur_req, conn->buf, conn->fd);
+    int bytes_read = read_http_reqs(req_queue, &conn->cur_req, conn->buf, conn->fd, conn->ip, conn->port);
     if (bytes_read < 0) {
         // Errors logged in read_http_reqs.
         close_conn(req_queue, conn_table, conn);

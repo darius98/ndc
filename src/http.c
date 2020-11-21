@@ -1,10 +1,10 @@
 #include "http.h"
 
 #include <errno.h>
-#include <stdlib.h>
-#include <string.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "logging.h"
@@ -68,33 +68,93 @@ static struct http_req* http_req_queue_pop(struct http_req_queue* req_queue) {
     return req;
 }
 
-static struct http_req* new_http_req(struct http_req_queue* req_queue, int tcp_conn_fd) {
-    struct http_req* req = malloc(sizeof(struct http_req));
-    if (req == 0) {
-        LOG_ERROR("Failed to allocate memory for a new http request, will close underlying TCP connection");
+static const char* http_response =
+    "HTTP/1.1 200 OK\r\n"
+    "Access-Control-Allow-Origin: *\r\n"
+    "Connection: Keep-Alive\r\n"
+    "Content-Type: text/plain\r\n"
+    "Server: Darius/0.1\r\n"
+    "Content-Length: 13\r\n"
+    "\r\n"
+    "Hello, World!";
+static void handle_http_request(struct http_req* req) {
+    // TODO: Implement!
+    if (write(req->response_fd, http_response, strlen(http_response)) < 0) {
+        LOG_FATAL("Failed to write HTTP response.");
+    }
+    LOG_INFO("%s %s %s 200 OK", req->ip, req->method, req->path);
+}
+
+static void* http_worker(void* arg) {
+    struct http_req_queue* req_queue = (struct http_req_queue*)arg;
+    while (atomic_load_explicit(&req_queue->stopped, memory_order_acquire) == 0) {
+        struct http_req* req = http_req_queue_pop(req_queue);
+        if (req != 0) {
+            handle_http_request(req);
+            delete_http_req(req_queue, req);
+        }
+    }
+    return 0;
+}
+
+struct http_req_queue* new_http_req_queue(int req_buf_cap, int num_workers) {
+    struct http_req_queue* queue = malloc(sizeof(struct http_req_queue));
+    if (queue == 0) {
         return 0;
     }
+    queue->req_buf_cap = req_buf_cap;
+    queue->head = 0;
+    queue->tail = 0;
+    int err = pthread_mutex_init(&queue->lock, 0);
+    if (err != 0) {
+        LOG_FATAL("pthread_mutex_init() failed with error=%d", err);
+    }
+    err = pthread_cond_init(&queue->cond_var, 0);
+    if (err != 0) {
+        LOG_FATAL("pthread_cond_init() failed with error=%d", err);
+    }
+    atomic_store_explicit(&queue->stopped, 0, memory_order_release);
+    queue->num_workers = num_workers;
+    queue->workers = malloc(num_workers * sizeof(pthread_t));
+    if (queue->workers == 0) {
+        LOG_FATAL("Failed to allocate memory for HTTP workers.");
+    }
+    for (int i = 0; i < num_workers; i++) {
+        err = pthread_create(&queue->workers[i], 0, http_worker, queue);
+        if (err != 0) {
+            LOG_FATAL("Failed to start HTTP worker error=%d", err);
+        }
+    }
+    return queue;
+}
+
+static struct http_req* new_http_req(struct http_req_queue* req_queue, int tcp_conn_fd, char* ip, int port) {
+    struct http_req* req = malloc(sizeof(struct http_req));
+    if (req == 0) {
+        LOG_ERROR("Memory allocation failure: new http request, will close connection to %s:%d", ip, port);
+        return 0;
+    }
+
+    memcpy(req->ip, ip, INET_ADDRSTRLEN);
+    req->port = port;
     req->buf_len = 0;
     req->buf_cap = req_queue->req_buf_cap;
     req->buf = malloc(req->buf_cap);
     if (req->buf == 0) {
-        LOG_ERROR("Failed to allocate memory for a new http request, will close underlying TCP connection");
+        LOG_ERROR("Memory allocation failure: buffer for new http request, will close connection to %s:%d", ip, port);
         free(req);
         return 0;
     }
 
     req->response_fd = dup(tcp_conn_fd);
     if (req->response_fd < 0) {
-        LOG_ERROR(
-            "Failed to duplicate file descriptor for a new http request: errno=%d (%s). Will close underlying TCP "
-            "connection",
-            errno, strerror(errno));
+        LOG_ERROR("dup(fd=%d) failed: errno=%d (%s), will close connection to %s:%d", tcp_conn_fd, errno,
+                  strerror(errno), ip, port);
         free(req->buf);
         free(req);
         return 0;
     }
 
-    req->flags = 0;
     req->method = 0;
     req->path = 0;
     req->version = 0;
@@ -104,19 +164,11 @@ static struct http_req* new_http_req(struct http_req_queue* req_queue, int tcp_c
     return req;
 }
 
-void delete_http_req(struct http_req_queue* req_queue, struct http_req* req) {
-    if (close(req->response_fd) < 0) {
-        LOG_ERROR("Failed to close file descriptor %d for responding to http request errno=%d (%s)", req->response_fd,
-                  errno, strerror(errno));
-    }
-    free(req->buf);
-    free(req);
-}
-
 static char* append_to_http_req(struct http_req* req, char* start, char* end) {
     int len = end - start;
     if (len + 1 > req->buf_cap - req->buf_len) {
-        LOG_ERROR("Received an HTTP request that exceeds the allocated buffer");
+        LOG_ERROR("Received HTTP request larger than %d bytes from %s:%d, will close connection", req->buf_cap, req->ip,
+                  req->port);
         return 0;
     }
     char* dst = req->buf + req->buf_len;
@@ -134,12 +186,13 @@ static char* find_next_clrf(char* s) {
     return strstr(s, "\r\n");
 }
 
-int read_http_reqs(struct http_req_queue* req_queue, struct http_req** cur_req, char* buf, int tcp_conn_fd) {
+int read_http_reqs(struct http_req_queue* req_queue, struct http_req** cur_req, char* buf, int tcp_conn_fd, char* ip,
+                   int port) {
     char* initial_buf = buf;
     while (1) {
         struct http_req* req = *cur_req;
         if (req == 0) {
-            req = new_http_req(req_queue, tcp_conn_fd);
+            req = new_http_req(req_queue, tcp_conn_fd, ip, port);
             if (req == 0) {
                 // Errors logged inside new_http_req.
                 return -1;
@@ -209,62 +262,11 @@ int read_http_reqs(struct http_req_queue* req_queue, struct http_req** cur_req, 
     }
 }
 
-static const char* http_response =
-    "HTTP/1.1 200 OK\r\n"
-    "Access-Control-Allow-Origin: *\r\n"
-    "Connection: Keep-Alive\r\n"
-    "Content-Type: text/plain\r\n"
-    "Server: Darius/0.1\r\n"
-    "Content-Length: 13\r\n"
-    "\r\n"
-    "Hello, World!";
-static void handle_http_request(struct http_req* req) {
-    // TODO: Implement!
-    if (write(req->response_fd, http_response, strlen(http_response)) < 0) {
-        LOG_FATAL("Failed to write HTTP response.");
+void delete_http_req(struct http_req_queue* req_queue, struct http_req* req) {
+    if (close(req->response_fd) < 0) {
+        LOG_ERROR("Failed to close() fd %d for responding to http request from %s:%d errno=%d (%s)", req->response_fd,
+                  req->ip, req->port, errno, strerror(errno));
     }
-    LOG_INFO("%s %s 200 OK", req->method, req->path);
-}
-
-static void* http_worker(void* arg) {
-    struct http_req_queue* req_queue = (struct http_req_queue*)arg;
-    while (atomic_load_explicit(&req_queue->stopped, memory_order_acquire) == 0) {
-        struct http_req* req = http_req_queue_pop(req_queue);
-        if (req != 0) {
-            handle_http_request(req);
-            delete_http_req(req_queue, req);
-        }
-    }
-    return 0;
-}
-
-struct http_req_queue* new_http_req_queue(int req_buf_cap, int num_workers) {
-    struct http_req_queue* queue = malloc(sizeof(struct http_req_queue));
-    if (queue == 0) {
-        return 0;
-    }
-    queue->req_buf_cap = req_buf_cap;
-    queue->head = 0;
-    queue->tail = 0;
-    int err = pthread_mutex_init(&queue->lock, 0);
-    if (err != 0) {
-        LOG_FATAL("pthread_mutex_init() failed with error=%d", err);
-    }
-    err = pthread_cond_init(&queue->cond_var, 0);
-    if (err != 0) {
-        LOG_FATAL("pthread_cond_init() failed with error=%d", err);
-    }
-    atomic_store_explicit(&queue->stopped, 0, memory_order_release);
-    queue->num_workers = num_workers;
-    queue->workers = malloc(num_workers * sizeof(pthread_t));
-    if (queue->workers == 0) {
-        LOG_FATAL("Failed to allocate memory for HTTP workers.");
-    }
-    for (int i = 0; i < num_workers; i++) {
-        err = pthread_create(&queue->workers[i], 0, http_worker, queue);
-        if (err != 0) {
-            LOG_FATAL("Failed to start HTTP worker error=%d", err);
-        }
-    }
-    return queue;
+    free(req->buf);
+    free(req);
 }

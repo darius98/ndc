@@ -1,15 +1,19 @@
 #ifndef NDC_HTTP_H_
 #define NDC_HTTP_H_
 
+#include <netinet/in.h>
+
 struct http_req {
+    /// Source IP address of the request.
+    char ip[INET_ADDRSTRLEN];
+
+    /// Source port of the request.
+    int port;
+
     /// A file descriptor where to stream the response.
     /// This is a duplicate file descriptor from the original TCP socket. It must be closed after
     /// the response to the HTTP request is streamed.
     int response_fd;
-
-    /// Flags for this HTTP request.
-    /// TODO: Store whether it accepts gzip encoding, whether the connection should be upgraded etc.
-    int flags;
 
     /// Used length of the request buffer.
     int buf_len;
@@ -52,7 +56,7 @@ struct http_req_queue* new_http_req_queue(int req_buf_cap, int num_workers);
 
 /// Read all available HTTP requests from the start of the connection's buffer.
 /// Returns the number of bytes parsed from buf.
-int read_http_reqs(struct http_req_queue* req_queue, struct http_req** cur_req, char* buf, int tcp_conn_fd);
+int read_http_reqs(struct http_req_queue* req_queue, struct http_req** cur_req, char* buf, int tcp_conn_fd, char* ip, int port);
 
 void delete_http_req(struct http_req_queue* req_queue, struct http_req* req);
 

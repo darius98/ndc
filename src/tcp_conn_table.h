@@ -11,7 +11,7 @@ struct tcp_conn {
     int buf_cap;
     char* buf;
     struct http_req* cur_req;
-    char ip[INET_ADDRSTRLEN + 1];
+    char ip[INET_ADDRSTRLEN];
     int port;
 };
 

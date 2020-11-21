@@ -105,7 +105,7 @@ struct tcp_conn* new_tcp_conn(struct tcp_conn_table* conn_table, int fd, char* i
     }
     conn->cur_req = 0;
     conn->fd = fd;
-    memcpy(conn->ip, ip, INET_ADDRSTRLEN + 1);
+    memcpy(conn->ip, ip, INET_ADDRSTRLEN);
     conn->port = port;
     if (tcp_conn_table_insert(conn_table, conn) < 0) {
         LOG_ERROR("Failed to grow tcp connection table bucket");
