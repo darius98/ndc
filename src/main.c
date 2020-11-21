@@ -4,7 +4,7 @@
 #include "tcp_server.h"
 
 int main() {
-    init_logging();
+    init_logging(1, 0);
     struct tcp_conn_table* table = new_tcp_conn_table(23, 4, 1 << 16);
     if (table == 0) {
         LOG_FATAL("Failed to allocate memory for tcp connection table");
