@@ -14,7 +14,7 @@ add_executable(ndc
         src/tcp_server.c
         src/logging.c
         src/main.c)
-target_compile_definitions(ndc PUBLIC -DNDC_LOG_FILE_AND_LINE -DNDC_LOG_LEVEL=0)
+target_compile_definitions(ndc PUBLIC -DNDC_LOG_FILE_AND_LINE -DNDC_LOG_LEVEL=1)
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Using LTO for release build")
     target_compile_options(ndc PUBLIC -flto)
