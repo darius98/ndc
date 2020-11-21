@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.17)
+project(ndc C)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_CXX_STANDARD 11)
+
+add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+
+add_executable(ndc
+        src/http.c
+        src/tcp_conn_table.c
+        src/tcp_server.c
+        src/logging.c
+        src/main.c)
+target_compile_definitions(ndc PUBLIC -DNDC_LOG_FILE_AND_LINE -DNDC_LOG_LEVEL=0)
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(STATUS "Using LTO for release build")
+    target_compile_options(ndc PUBLIC -flto)
+    target_link_options(ndc PUBLIC -flto)
+endif()
