@@ -10,10 +10,11 @@ add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
 
 add_executable(ndc
         src/http.c
-        src/tcp_conn_table.c
-        src/tcp_server.c
         src/logging.c
-        src/main.c)
+        src/main.c
+        src/static_file_server.c
+        src/tcp_conn_table.c
+        src/tcp_server.c)
 target_compile_definitions(ndc PUBLIC -DNDC_LOG_FILE_AND_LINE -DNDC_LOG_LEVEL=0)
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Using LTO for release build")

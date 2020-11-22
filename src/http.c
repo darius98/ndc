@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "logging.h"
+#include "static_file_server.h"
 
 struct http_req_queue {
     struct http_req* head;
@@ -16,9 +17,14 @@ struct http_req_queue {
     pthread_mutex_t lock;
     pthread_cond_t cond_var;
     atomic_int stopped;
+
     int req_buf_cap;
+
     int num_workers;
     pthread_t* workers;
+
+    // Sub-servers
+    struct static_file_server* static_files;
 };
 
 static void http_req_queue_push(struct http_req_queue* req_queue, struct http_req* req) {
@@ -68,21 +74,9 @@ static struct http_req* http_req_queue_pop(struct http_req_queue* req_queue) {
     return req;
 }
 
-static const char* http_response =
-    "HTTP/1.1 200 OK\r\n"
-    "Access-Control-Allow-Origin: *\r\n"
-    "Connection: Keep-Alive\r\n"
-    "Content-Type: text/plain\r\n"
-    "Server: Darius/0.1\r\n"
-    "Content-Length: 13\r\n"
-    "\r\n"
-    "Hello, World!";
-static void handle_http_request(struct http_req* req) {
-    // TODO: Implement!
-    if (write(req->response_fd, http_response, strlen(http_response)) < 0) {
-        LOG_FATAL("Failed to write HTTP response.");
-    }
-    LOG_INFO("%s %s %s 200 OK", req->ip, req->method, req->path);
+static void handle_http_request(struct http_req_queue* req_queue, struct http_req* req) {
+    serve_static_file(req_queue->static_files, req);
+    delete_http_req(req_queue, req);
 }
 
 static void* http_worker(void* arg) {
@@ -90,19 +84,19 @@ static void* http_worker(void* arg) {
     while (atomic_load_explicit(&req_queue->stopped, memory_order_acquire) == 0) {
         struct http_req* req = http_req_queue_pop(req_queue);
         if (req != 0) {
-            handle_http_request(req);
-            delete_http_req(req_queue, req);
+            handle_http_request(req_queue, req);
         }
     }
     return 0;
 }
 
-struct http_req_queue* new_http_req_queue(int req_buf_cap, int num_workers) {
+struct http_req_queue* new_http_req_queue(struct static_file_server* static_files, int req_buf_cap, int num_workers) {
     struct http_req_queue* queue = malloc(sizeof(struct http_req_queue));
     if (queue == 0) {
         return 0;
     }
     queue->req_buf_cap = req_buf_cap;
+    queue->static_files = static_files;
     queue->head = 0;
     queue->tail = 0;
     int err = pthread_mutex_init(&queue->lock, 0);

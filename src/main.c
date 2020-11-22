@@ -1,5 +1,6 @@
 #include "http.h"
 #include "logging.h"
+#include "static_file_server.h"
 #include "tcp_conn_table.h"
 #include "tcp_server.h"
 
@@ -9,9 +10,13 @@ int main() {
     if (table == 0) {
         LOG_FATAL("Failed to allocate memory for tcp connection table");
     }
-    struct http_req_queue* req_queue = new_http_req_queue(1 << 16, 4);
-    if (req_queue == 0) {
+    struct static_file_server* static_files = new_static_file_server("./");
+    if (static_files == 0) {
+        LOG_FATAL("Failed to allocate memory for static file server");
+    }
+    struct http_req_queue* http_req_queue = new_http_req_queue(static_files, 1 << 16, 4);
+    if (http_req_queue == 0) {
         LOG_FATAL("Failed to allocate memory for HTTP requests queue");
     }
-    run_tcp_server(req_queue, table, 1337, 16);
+    run_tcp_server(http_req_queue, table, 1337, 16);
 }

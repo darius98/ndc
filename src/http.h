@@ -3,6 +3,8 @@
 
 #include <netinet/in.h>
 
+struct static_file_server;
+
 struct http_req {
     /// Source IP address of the request.
     char ip[INET_ADDRSTRLEN];
@@ -52,7 +54,7 @@ struct http_req_queue;
 
 /// Allocate and initialize a http requests queue.
 /// Note: returns NULL on allocation failure.
-struct http_req_queue* new_http_req_queue(int req_buf_cap, int num_workers);
+struct http_req_queue* new_http_req_queue(struct static_file_server* static_files, int req_buf_cap, int num_workers);
 
 /// Read all available HTTP requests from the start of the connection's buffer.
 /// Returns the number of bytes parsed from buf.
