@@ -4,12 +4,6 @@
 struct static_file_server;
 
 struct http_req {
-    /// Source IP address of the request.
-    int ipv4;
-
-    /// Source port of the request.
-    int port;
-
     /// A file descriptor where to stream the response.
     /// This is a duplicate file descriptor from the original TCP socket. It must be closed after
     /// the response to the HTTP request is streamed.
@@ -43,6 +37,12 @@ struct http_req {
     /// The request is copied into this string. The memory here is owned by the request handler and
     /// must be freed after the the response is streamed.
     char* buf;
+
+    /// Source IP address of the request.
+    int ipv4;
+
+    /// Source port of the request.
+    int port;
 
     /// For the queue of http requests.
     struct http_req* next;
