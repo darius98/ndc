@@ -11,7 +11,7 @@ struct tcp_conn {
     int buf_cap;
     char* buf;
     struct http_req* cur_req;
-    char ip[INET_ADDRSTRLEN];
+    int ipv4;
     int port;
 };
 
@@ -21,7 +21,7 @@ struct tcp_conn_table* new_tcp_conn_table(int n_buckets, int bucket_init_cap, in
 
 struct tcp_conn* tcp_conn_table_lookup(struct tcp_conn_table* table, int fd);
 
-struct tcp_conn* new_tcp_conn(struct tcp_conn_table* table, int fd, char* ip, int port);
+struct tcp_conn* new_tcp_conn(struct tcp_conn_table* table, int fd, int ipv4, int port);
 
 int delete_tcp_conn(struct tcp_conn_table* table, struct tcp_conn* connection);
 

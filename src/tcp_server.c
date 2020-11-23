@@ -1,6 +1,5 @@
 #include "tcp_server.h"
 
-#include <arpa/inet.h>
 #include <errno.h>
 #include <memory.h>
 #include <netinet/in.h>
@@ -40,26 +39,23 @@ static struct tcp_conn *accept_conn(struct tcp_conn_table *conn_table, int liste
         LOG_FATAL("accept() failed errno=%d (%s)", errno, strerror(errno));
     }
 
-    char ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &client_addr.sin_addr, ip, INET_ADDRSTRLEN);
-
-    struct tcp_conn *conn = new_tcp_conn(conn_table, fd, ip, client_addr.sin_port);
+    struct tcp_conn *conn = new_tcp_conn(conn_table, fd, client_addr.sin_addr.s_addr, client_addr.sin_port);
     if (conn == 0) {
         // Errors are logged in new_tcp_conn.
         if (close(fd) < 0) {
-            LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ip,
-                      client_addr.sin_port, errno, strerror(errno));
+            LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd,
+                      ipv4_str(client_addr.sin_addr.s_addr), client_addr.sin_port, errno, strerror(errno));
         }
         return 0;
     }
-    LOG_DEBUG("TCP client connected: %s:%d (fd=%d)", conn->ip, conn->port, conn->fd);
+    LOG_DEBUG("TCP client connected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
     return conn;
 }
 
 static void close_conn(struct http_req_queue *req_queue, struct tcp_conn_table *conn_table, struct tcp_conn *conn) {
     if (close(conn->fd) < 0) {
-        LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", conn->fd, conn->ip,
-                  conn->port, errno, strerror(errno));
+        LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", conn->fd,
+                  ipv4_str(conn->ipv4), conn->port, errno, strerror(errno));
     }
     if (conn->cur_req != 0) {
         delete_http_req(req_queue, conn->cur_req);
@@ -68,26 +64,27 @@ static void close_conn(struct http_req_queue *req_queue, struct tcp_conn_table *
         LOG_ERROR(
             "close_conn(): connection %s:%d (fd=%d) is not in connections table. Memory for this "
             "connection will not be reclaimed, so this message may indicate a memory leak.",
-            conn->ip, conn->port, conn->fd);
+            ipv4_str(conn->ipv4), conn->port, conn->fd);
     }
-    LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", conn->ip, conn->port, conn->fd);
+    LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
 }
 
 static void recv_from_conn(struct http_req_queue *req_queue, struct tcp_conn_table *conn_table, struct tcp_conn *conn) {
     ssize_t num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
     if (num_bytes < 0) {
         // TODO: Handle error better.
-        LOG_FATAL("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", conn->ip, conn->port, conn->fd, errno,
-                  strerror(errno));
+        LOG_FATAL("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
+                  conn->fd, errno, strerror(errno));
     }
     if (num_bytes == 0) {
-        LOG_WARN("Spurious wake-up of connection %s:%d (fd=%d), had no bytes to read", conn->ip, conn->port, conn->fd);
+        LOG_WARN("Spurious wake-up of connection %s:%d (fd=%d), had no bytes to read", ipv4_str(conn->ipv4), conn->port,
+                 conn->fd);
         return;
     }
-    LOG_DEBUG("Received %zu bytes from %s:%d (fd=%d)", num_bytes, conn->ip, conn->port, conn->fd);
+    LOG_DEBUG("Received %zu bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf_len += num_bytes;
     conn->buf[conn->buf_len] = 0;
-    int bytes_read = read_http_reqs(req_queue, &conn->cur_req, conn->buf, conn->fd, conn->ip, conn->port);
+    int bytes_read = read_http_reqs(req_queue, &conn->cur_req, conn->buf, conn->fd, conn->ipv4, conn->port);
     if (bytes_read < 0) {
         // Errors logged in read_http_reqs.
         close_conn(req_queue, conn_table, conn);
@@ -99,7 +96,7 @@ static void recv_from_conn(struct http_req_queue *req_queue, struct tcp_conn_tab
         if (conn->buf_len == conn->buf_cap) {
             LOG_ERROR(
                 "Buffer for connection %s:%d (fd=%d) is filled by a single HTTP request, will close this connection",
-                conn->ip, conn->port, conn->fd);
+                ipv4_str(conn->ipv4), conn->port, conn->fd);
             close_conn(req_queue, conn_table, conn);
         }
     }
@@ -145,7 +142,7 @@ void run_tcp_server(struct http_req_queue *req_queue, struct tcp_conn_table *con
                 EV_SET(&event, conn->fd, EVFILT_READ, EV_ADD, 0, 0, 0);
                 if (kevent(kqueue_id, &event, 1, 0, 0, 0) < 0 && errno != EINTR) {
                     LOG_ERROR("Could not accept TCP connection from %s:%d (fd=%d), kevent() failed errno=%d (%s)",
-                              conn->ip, conn->port, conn->fd, errno, strerror(errno));
+                              ipv4_str(conn->ipv4), conn->port, conn->fd, errno, strerror(errno));
                     close_conn(req_queue, conn_table, conn);
                 }
             }
@@ -154,7 +151,7 @@ void run_tcp_server(struct http_req_queue *req_queue, struct tcp_conn_table *con
             if (conn == 0) {
                 LOG_WARN("Received kevent() on fd=%d, but could not find connection", event_fd);
             } else {
-                LOG_DEBUG("Received kevent on connection %s:%d (fd=%d)", conn->ip, conn->port, conn->fd);
+                LOG_DEBUG("Received kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
                 if (event.flags & EV_EOF) {
                     close_conn(req_queue, conn_table, conn);
                 } else if (event.filter & EVFILT_READ) {

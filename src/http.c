@@ -122,20 +122,21 @@ struct http_req_queue* new_http_req_queue(struct static_file_server* static_file
     return queue;
 }
 
-static struct http_req* new_http_req(struct http_req_queue* req_queue, int tcp_conn_fd, char* ip, int port) {
+static struct http_req* new_http_req(struct http_req_queue* req_queue, int tcp_conn_fd, int ipv4, int port) {
     struct http_req* req = malloc(sizeof(struct http_req));
     if (req == 0) {
-        LOG_ERROR("Memory allocation failure: new http request, will close connection to %s:%d", ip, port);
+        LOG_ERROR("Memory allocation failure: new http request, will close connection to %s:%d", ipv4_str(ipv4), port);
         return 0;
     }
 
-    memcpy(req->ip, ip, INET_ADDRSTRLEN);
+    req->ipv4 = ipv4;
     req->port = port;
     req->buf_len = 0;
     req->buf_cap = req_queue->req_buf_cap;
     req->buf = malloc(req->buf_cap);
     if (req->buf == 0) {
-        LOG_ERROR("Memory allocation failure: buffer for new http request, will close connection to %s:%d", ip, port);
+        LOG_ERROR("Memory allocation failure: buffer for new http request, will close connection to %s:%d",
+                  ipv4_str(ipv4), port);
         free(req);
         return 0;
     }
@@ -143,7 +144,7 @@ static struct http_req* new_http_req(struct http_req_queue* req_queue, int tcp_c
     req->response_fd = dup(tcp_conn_fd);
     if (req->response_fd < 0) {
         LOG_ERROR("dup(fd=%d) failed: errno=%d (%s), will close connection to %s:%d", tcp_conn_fd, errno,
-                  strerror(errno), ip, port);
+                  strerror(errno), ipv4_str(ipv4), port);
         free(req->buf);
         free(req);
         return 0;
@@ -161,8 +162,8 @@ static struct http_req* new_http_req(struct http_req_queue* req_queue, int tcp_c
 static char* append_to_http_req(struct http_req* req, char* start, char* end) {
     int len = end - start;
     if (len + 1 > req->buf_cap - req->buf_len) {
-        LOG_ERROR("Received HTTP request larger than %d bytes from %s:%d, will close connection", req->buf_cap, req->ip,
-                  req->port);
+        LOG_ERROR("Received HTTP request larger than %d bytes from %s:%d, will close connection", req->buf_cap,
+                  ipv4_str(req->ipv4), req->port);
         return 0;
     }
     char* dst = req->buf + req->buf_len;
@@ -180,13 +181,13 @@ static char* find_next_clrf(char* s) {
     return strstr(s, "\r\n");
 }
 
-int read_http_reqs(struct http_req_queue* req_queue, struct http_req** cur_req, char* buf, int tcp_conn_fd, char* ip,
+int read_http_reqs(struct http_req_queue* req_queue, struct http_req** cur_req, char* buf, int tcp_conn_fd, int ipv4,
                    int port) {
     char* initial_buf = buf;
     while (1) {
         struct http_req* req = *cur_req;
         if (req == 0) {
-            req = new_http_req(req_queue, tcp_conn_fd, ip, port);
+            req = new_http_req(req_queue, tcp_conn_fd, ipv4, port);
             if (req == 0) {
                 // Errors logged inside new_http_req.
                 return -1;
@@ -259,7 +260,7 @@ int read_http_reqs(struct http_req_queue* req_queue, struct http_req** cur_req, 
 void delete_http_req(struct http_req_queue* req_queue, struct http_req* req) {
     if (close(req->response_fd) < 0) {
         LOG_ERROR("Failed to close() fd %d for responding to http request from %s:%d errno=%d (%s)", req->response_fd,
-                  req->ip, req->port, errno, strerror(errno));
+                  ipv4_str(req->ipv4), req->port, errno, strerror(errno));
     }
     free(req->buf);
     free(req);

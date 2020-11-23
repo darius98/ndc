@@ -89,23 +89,23 @@ struct tcp_conn* tcp_conn_table_lookup(struct tcp_conn_table* conn_table, int fd
     return 0;
 }
 
-struct tcp_conn* new_tcp_conn(struct tcp_conn_table* conn_table, int fd, char* ip, int port) {
+struct tcp_conn* new_tcp_conn(struct tcp_conn_table* conn_table, int fd, int ipv4, int port) {
     struct tcp_conn* conn = malloc(sizeof(struct tcp_conn));
     if (conn == 0) {
-        LOG_ERROR("Failed to allocate memory for new connection: %s:%d", ip, port);
+        LOG_ERROR("Failed to allocate memory for new connection: %s:%d", ipv4_str(ipv4), port);
         return 0;
     }
     conn->buf_cap = conn_table->conn_buf_len;
     conn->buf_len = 0;
     conn->buf = malloc(conn->buf_cap + 1);
     if (conn->buf == 0) {
-        LOG_ERROR("Failed to allocate buffer for new connection: %s:%d", ip, port);
+        LOG_ERROR("Failed to allocate buffer for new connection: %s:%d", ipv4_str(ipv4), port);
         free(conn);
         return 0;
     }
     conn->cur_req = 0;
     conn->fd = fd;
-    memcpy(conn->ip, ip, INET_ADDRSTRLEN);
+    conn->ipv4 = ipv4;
     conn->port = port;
     if (tcp_conn_table_insert(conn_table, conn) < 0) {
         LOG_ERROR("Failed to grow tcp connection table bucket");
