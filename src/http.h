@@ -3,14 +3,11 @@
 
 struct static_file_server;
 
-struct http_req {
-    /// A file descriptor where to stream the response.
-    /// This is a duplicate file descriptor from the original TCP socket. It must be closed after
-    /// the response to the HTTP request is streamed.
-    int response_fd;
+struct tcp_conn;
 
-    /// Parsed value of the Content-Length header (-1 if the header is not available or invalid).
-    int body_len;
+struct http_req {
+    /// The underlying TCP connection.
+    struct tcp_conn* conn;
 
     /// Null-terminated string pointing to the method of the request, inside the buffer.
     char* method;
@@ -24,8 +21,11 @@ struct http_req {
     /// Null-terminated string pointing to the first HTTP header of the request, inside the buffer.
     char* headers;
 
-    /// Pointer to the body of the request. NOT null-terminated.
+    /// Pointer to the body of the request. Not necessarily null-terminated.
     char* body;
+
+    /// Parsed value of the Content-Length header (-1 if the header is not available or invalid).
+    int body_len;
 
     /// Used length of the request buffer.
     int buf_len;
@@ -37,12 +37,6 @@ struct http_req {
     /// The request is copied into this string. The memory here is owned by the request handler and
     /// must be freed after the the response is streamed.
     char* buf;
-
-    /// Source IP address of the request.
-    int ipv4;
-
-    /// Source port of the request.
-    int port;
 
     /// For the queue of http requests.
     struct http_req* next;
@@ -56,8 +50,7 @@ struct http_req_queue* new_http_req_queue(struct static_file_server* static_file
 
 /// Read all available HTTP requests from the start of the connection's buffer.
 /// Returns the number of bytes parsed from buf.
-int read_http_reqs(struct http_req_queue* req_queue, struct http_req** cur_req, char* buf, int tcp_conn_fd, int ipv4,
-                   int port);
+int read_http_reqs(struct http_req_queue* req_queue, struct tcp_conn* conn);
 
 void delete_http_req(struct http_req_queue* req_queue, struct http_req* req);
 

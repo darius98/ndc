@@ -8,6 +8,7 @@
 
 #include "http.h"
 #include "logging.h"
+#include "tcp_conn_table.h"
 
 // TODO: Rewrite everything.
 
@@ -80,8 +81,8 @@ void serve_static_file(struct static_file_server* server, struct http_req* req) 
     int req_path_len = strlen(req->path);
     char* path = malloc(server->base_dir_len + req_path_len + 1);
     if (path == 0) {
-        LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->ipv4),
-                  req->port, req->method, req->path);
+        LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
+                  req->conn->port, req->method, req->path);
         return;
     }
     path[0] = 0;
@@ -90,11 +91,11 @@ void serve_static_file(struct static_file_server* server, struct http_req* req) 
     strcat(path, req->path + skip_first_slash);
     FILE* file = fopen(path, "rb");
     if (file == 0) {
-        if (sync_write(req->response_fd, http_404_response, http_404_response_len) < 0) {
+        if (sync_write(req->conn->fd, http_404_response, http_404_response_len) < 0) {
             LOG_ERROR("Failed to write 404 Not found response to request %s %s from connection %s:%d errno=%d (%s)",
-                      req->method, req->path, ipv4_str(req->ipv4), req->port, errno, strerror(errno));
+                      req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port, errno, strerror(errno));
         } else {
-            LOG_INFO("%s %s %s 404 Not found", ipv4_str(req->ipv4), req->method, req->path);
+            LOG_INFO("%s %s %s 404 Not found", ipv4_str(req->conn->ipv4), req->method, req->path);
         }
         free(path);
         return;
@@ -125,20 +126,20 @@ void serve_static_file(struct static_file_server* server, struct http_req* req) 
         fclose(file);
         return;
     }
-    if (sync_write(req->response_fd, response_hdr, response_hdr_len) < 0) {
+    if (sync_write(req->conn->fd, response_hdr, response_hdr_len) < 0) {
         LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
-                  req->method, req->path, ipv4_str(req->ipv4), req->port, errno, strerror(errno));
+                  req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port, errno, strerror(errno));
         free(path);
         fclose(file);
         return;
     }
-    int err = sync_write_file(req->response_fd, file) < 0;
+    int err = sync_write_file(req->conn->fd, file) < 0;
     if (err < 0) {
         LOG_ERROR("Failed to write file response to request %s %s from connection %s:%d errno=%d (%s)", req->method,
-                  req->path, ipv4_str(req->ipv4), req->port, err == -1 ? ferror(file) : errno,
+                  req->path, ipv4_str(req->conn->ipv4), req->conn->port, err == -1 ? ferror(file) : errno,
                   strerror(err == -1 ? ferror(file) : errno));
     } else {
-        LOG_INFO("%s %s %s 200 OK", ipv4_str(req->ipv4), req->method, req->path);
+        LOG_INFO("%s %s %s 200 OK", ipv4_str(req->conn->ipv4), req->method, req->path);
     }
     free(path);
     fclose(file);

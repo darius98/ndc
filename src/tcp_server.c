@@ -52,23 +52,6 @@ static struct tcp_conn *accept_conn(struct tcp_conn_table *conn_table, int liste
     return conn;
 }
 
-static void close_conn(struct http_req_queue *req_queue, struct tcp_conn_table *conn_table, struct tcp_conn *conn) {
-    if (close(conn->fd) < 0) {
-        LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", conn->fd,
-                  ipv4_str(conn->ipv4), conn->port, errno, strerror(errno));
-    }
-    if (conn->cur_req != 0) {
-        delete_http_req(req_queue, conn->cur_req);
-    }
-    if (delete_tcp_conn(conn_table, conn) < 0) {
-        LOG_ERROR(
-            "close_conn(): connection %s:%d (fd=%d) is not in connections table. Memory for this "
-            "connection will not be reclaimed, so this message may indicate a memory leak.",
-            ipv4_str(conn->ipv4), conn->port, conn->fd);
-    }
-    LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
-}
-
 static void recv_from_conn(struct http_req_queue *req_queue, struct tcp_conn_table *conn_table, struct tcp_conn *conn) {
     ssize_t num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
     if (num_bytes < 0) {
@@ -84,10 +67,10 @@ static void recv_from_conn(struct http_req_queue *req_queue, struct tcp_conn_tab
     LOG_DEBUG("Received %zu bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf_len += num_bytes;
     conn->buf[conn->buf_len] = 0;
-    int bytes_read = read_http_reqs(req_queue, &conn->cur_req, conn->buf, conn->fd, conn->ipv4, conn->port);
+    int bytes_read = read_http_reqs(req_queue, conn);
     if (bytes_read < 0) {
         // Errors logged in read_http_reqs.
-        close_conn(req_queue, conn_table, conn);
+        close_tcp_conn(req_queue, conn_table, conn);
     } else {
         if (bytes_read != conn->buf_len) {
             memcpy(conn->buf, conn->buf + bytes_read, conn->buf_len - bytes_read);
@@ -97,7 +80,7 @@ static void recv_from_conn(struct http_req_queue *req_queue, struct tcp_conn_tab
             LOG_ERROR(
                 "Buffer for connection %s:%d (fd=%d) is filled by a single HTTP request, will close this connection",
                 ipv4_str(conn->ipv4), conn->port, conn->fd);
-            close_conn(req_queue, conn_table, conn);
+            close_tcp_conn(req_queue, conn_table, conn);
         }
     }
 }
@@ -143,7 +126,7 @@ void run_tcp_server(struct http_req_queue *req_queue, struct tcp_conn_table *con
                 if (kevent(kqueue_id, &event, 1, 0, 0, 0) < 0 && errno != EINTR) {
                     LOG_ERROR("Could not accept TCP connection from %s:%d (fd=%d), kevent() failed errno=%d (%s)",
                               ipv4_str(conn->ipv4), conn->port, conn->fd, errno, strerror(errno));
-                    close_conn(req_queue, conn_table, conn);
+                    close_tcp_conn(req_queue, conn_table, conn);
                 }
             }
         } else {
@@ -153,7 +136,7 @@ void run_tcp_server(struct http_req_queue *req_queue, struct tcp_conn_table *con
             } else {
                 LOG_DEBUG("Received kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
                 if (event.flags & EV_EOF) {
-                    close_conn(req_queue, conn_table, conn);
+                    close_tcp_conn(req_queue, conn_table, conn);
                 } else if (event.filter & EVFILT_READ) {
                     recv_from_conn(req_queue, conn_table, conn);
                 } else {

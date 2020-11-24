@@ -1,7 +1,9 @@
 #include "tcp_conn_table.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "logging.h"
 
@@ -116,11 +118,35 @@ struct tcp_conn* new_tcp_conn(struct tcp_conn_table* conn_table, int fd, int ipv
     return conn;
 }
 
-int delete_tcp_conn(struct tcp_conn_table* conn_table, struct tcp_conn* conn) {
+void close_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table* conn_table, struct tcp_conn* conn) {
     if (tcp_conn_table_erase(conn_table, conn) < 0) {
-        return -1;
+        LOG_ERROR(
+            "connection %s:%d (fd=%d) is not in TCP connections table. Memory for this "
+            "connection will not be reclaimed, so this message may indicate a memory leak.",
+            ipv4_str(conn->ipv4), conn->port, conn->fd);
+        return;
     }
-    free(conn->buf);
-    free(conn);
-    return 0;
+    if (close(conn->fd) < 0) {
+        LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", conn->fd,
+                  ipv4_str(conn->ipv4), conn->port, errno, strerror(errno));
+    }
+    LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
+    if (conn->cur_req != 0) {
+        delete_http_req(req_queue, conn->cur_req);
+        conn->cur_req = 0;
+    }
+    tcp_conn_dec_refcount(req_queue, conn);
+}
+
+void tcp_conn_inc_refcount(struct tcp_conn* conn) {
+    atomic_fetch_add_explicit(&conn->ref_count, 1, memory_order_release);
+}
+
+void tcp_conn_dec_refcount(struct http_req_queue* req_queue, struct tcp_conn* conn) {
+    int ref_cnt = atomic_fetch_sub_explicit(&conn->ref_count, 1, memory_order_acq_rel);
+    if (ref_cnt == 1) {
+        LOG_DEBUG("Reclaiming memory for tcp connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
+        free(conn->buf);
+        free(conn);
+    }
 }
