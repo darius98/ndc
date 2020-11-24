@@ -91,10 +91,47 @@ struct tcp_conn* tcp_conn_table_lookup(struct tcp_conn_table* conn_table, int fd
     return 0;
 }
 
-struct tcp_conn* new_tcp_conn(struct tcp_conn_table* conn_table, int fd, int ipv4, int port) {
+int init_tcp_server(int port, int max_clients) {
+    int listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listen_fd < 0) {
+        LOG_FATAL("socket() failed errno=%d (%s)", errno, strerror(errno));
+    }
+
+    struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(struct sockaddr_in));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_addr.sin_port = htons(port);
+    if (bind(listen_fd, (const struct sockaddr *)&server_addr, sizeof(struct sockaddr_in)) < 0) {
+        LOG_FATAL("bind() failed errno=%d (%s)", errno, strerror(errno));
+    }
+    if (listen(listen_fd, max_clients) < 0) {
+        LOG_FATAL("listen() failed errno=%d (%s)", errno, strerror(errno));
+    }
+    LOG_INFO("Running HTTP server on port %d", port);
+    return listen_fd;
+}
+
+struct tcp_conn* accept_tcp_conn(struct tcp_conn_table* conn_table, int tcp_server_fd) {
+    int fd;
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(struct sockaddr_in);
+    fd = accept(tcp_server_fd, (struct sockaddr*)&client_addr, &client_addr_len);
+    if (fd < 0) {
+        // TODO: Handle error better.
+        LOG_FATAL("accept() failed errno=%d (%s)", errno, strerror(errno));
+    }
+
+    int ipv4 = client_addr.sin_addr.s_addr;
+    int port = client_addr.sin_port;
+
     struct tcp_conn* conn = malloc(sizeof(struct tcp_conn));
     if (conn == 0) {
         LOG_ERROR("Failed to allocate memory for new connection: %s:%d", ipv4_str(ipv4), port);
+        if (close(fd) < 0) {
+            LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
+                      port, errno, strerror(errno));
+        }
         return 0;
     }
     conn->buf_cap = conn_table->conn_buf_len;
@@ -102,6 +139,10 @@ struct tcp_conn* new_tcp_conn(struct tcp_conn_table* conn_table, int fd, int ipv
     conn->buf = malloc(conn->buf_cap + 1);
     if (conn->buf == 0) {
         LOG_ERROR("Failed to allocate buffer for new connection: %s:%d", ipv4_str(ipv4), port);
+        if (close(fd) < 0) {
+            LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
+                      port, errno, strerror(errno));
+        }
         free(conn);
         return 0;
     }
@@ -111,11 +152,49 @@ struct tcp_conn* new_tcp_conn(struct tcp_conn_table* conn_table, int fd, int ipv
     conn->port = port;
     if (tcp_conn_table_insert(conn_table, conn) < 0) {
         LOG_ERROR("Failed to grow tcp connection table bucket");
+        if (close(fd) < 0) {
+            LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
+                      port, errno, strerror(errno));
+        }
         free(conn->buf);
         free(conn);
         return 0;
     }
+    LOG_DEBUG("TCP client connected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
     return conn;
+}
+
+void recv_from_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table* conn_table, struct tcp_conn* conn) {
+    ssize_t num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
+    if (num_bytes < 0) {
+        // TODO: Handle error better.
+        LOG_FATAL("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
+                  conn->fd, errno, strerror(errno));
+    }
+    if (num_bytes == 0) {
+        LOG_WARN("Spurious wake-up of connection %s:%d (fd=%d), had no bytes to read", ipv4_str(conn->ipv4), conn->port,
+                 conn->fd);
+        return;
+    }
+    LOG_DEBUG("Received %zu bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
+    conn->buf_len += num_bytes;
+    conn->buf[conn->buf_len] = 0;
+    int bytes_read = read_http_reqs(req_queue, conn);
+    if (bytes_read < 0) {
+        // Errors logged in read_http_reqs.
+        close_tcp_conn(req_queue, conn_table, conn);
+    } else {
+        if (bytes_read != conn->buf_len) {
+            memcpy(conn->buf, conn->buf + bytes_read, conn->buf_len - bytes_read);
+        }
+        conn->buf_len -= bytes_read;
+        if (conn->buf_len == conn->buf_cap) {
+            LOG_ERROR(
+                "Buffer for connection %s:%d (fd=%d) is filled by a single HTTP request, will close this connection",
+                ipv4_str(conn->ipv4), conn->port, conn->fd);
+            close_tcp_conn(req_queue, conn_table, conn);
+        }
+    }
 }
 
 void close_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table* conn_table, struct tcp_conn* conn) {
@@ -135,14 +214,14 @@ void close_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table* con
         delete_http_req(req_queue, conn->cur_req);
         conn->cur_req = 0;
     }
-    tcp_conn_dec_refcount(req_queue, conn);
+    tcp_conn_dec_refcount(conn);
 }
 
 void tcp_conn_inc_refcount(struct tcp_conn* conn) {
     atomic_fetch_add_explicit(&conn->ref_count, 1, memory_order_release);
 }
 
-void tcp_conn_dec_refcount(struct http_req_queue* req_queue, struct tcp_conn* conn) {
+void tcp_conn_dec_refcount(struct tcp_conn* conn) {
     int ref_cnt = atomic_fetch_sub_explicit(&conn->ref_count, 1, memory_order_acq_rel);
     if (ref_cnt == 1) {
         LOG_DEBUG("Reclaiming memory for tcp connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);

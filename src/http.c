@@ -251,7 +251,7 @@ int read_http_reqs(struct http_req_queue* req_queue, struct tcp_conn* conn) {
 }
 
 void delete_http_req(struct http_req_queue* req_queue, struct http_req* req) {
-    tcp_conn_dec_refcount(req_queue, req->conn);
+    tcp_conn_dec_refcount(req->conn);
     free(req->buf);
     free(req);
 }

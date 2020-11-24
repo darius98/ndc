@@ -18,5 +18,10 @@ int main() {
     if (http_req_queue == 0) {
         LOG_FATAL("Failed to allocate memory for HTTP requests queue");
     }
-    run_tcp_server(http_req_queue, table, 1337, 16);
+    int tcp_server_fd = init_tcp_server(1337, 16);
+    if (tcp_server_fd < 0) {
+        return 1;
+    }
+    run_tcp_server(http_req_queue, table, tcp_server_fd);
+    return 0;
 }
