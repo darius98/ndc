@@ -1,5 +1,5 @@
-#ifndef NDC_TCP_CONN_TABLE_H_
-#define NDC_TCP_CONN_TABLE_H_
+#ifndef NDC_TCP_SERVER_H_
+#define NDC_TCP_SERVER_H_
 
 #include <netinet/in.h>
 #include <stdatomic.h>

@@ -11,7 +11,7 @@ set(ndc_sources
         src/logging.c
         src/main.c
         src/static_file_server.c
-        src/tcp_conn_table.c)
+        src/tcp_server.c)
 if (APPLE)
     list(APPEND ndc_sources src/tcp_server_loop_kqueue.c)
 endif()
