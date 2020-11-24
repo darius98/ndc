@@ -13,7 +13,7 @@ set(ndc_sources
         src/static_file_server.c
         src/tcp_server.c)
 if (APPLE)
-    list(APPEND ndc_sources src/tcp_server_loop_kqueue.c)
+    list(APPEND ndc_sources src/tcp_server_kqueue.c)
 endif()
 
 add_executable(ndc ${ndc_sources})

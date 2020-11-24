@@ -2,7 +2,6 @@
 #include "logging.h"
 #include "static_file_server.h"
 #include "tcp_server.h"
-#include "tcp_server_loop.h"
 
 int main() {
     init_logging(1, 0);
