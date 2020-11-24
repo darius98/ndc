@@ -2,7 +2,7 @@
 #include "logging.h"
 #include "static_file_server.h"
 #include "tcp_conn_table.h"
-#include "tcp_server.h"
+#include "tcp_server_loop.h"
 
 int main() {
     init_logging(1, 0);
@@ -18,6 +18,6 @@ int main() {
     if (server == 0) {
         return 1;
     }
-    run_tcp_server(server);
+    run_tcp_server_loop(server);
     return 0;
 }

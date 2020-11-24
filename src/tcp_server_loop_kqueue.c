@@ -1,4 +1,4 @@
-#include "tcp_server.h"
+#include "tcp_server_loop.h"
 
 #include <errno.h>
 #include <string.h>
@@ -6,7 +6,7 @@
 
 #include "logging.h"
 
-void run_tcp_server(struct tcp_server *server) {
+void run_tcp_server_loop(struct tcp_server *server) {
     int kqueue_id = kqueue();
     if (kqueue_id < 0) {
         LOG_FATAL("Failed to start server: kqueue() failed errno=%d (%s)", errno, strerror(errno));

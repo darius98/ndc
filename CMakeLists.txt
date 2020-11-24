@@ -6,13 +6,17 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 11)
 
-add_executable(ndc
+set(ndc_sources
         src/http.c
         src/logging.c
         src/main.c
         src/static_file_server.c
-        src/tcp_conn_table.c
-        src/tcp_server.c)
+        src/tcp_conn_table.c)
+if (APPLE)
+    list(APPEND ndc_sources src/tcp_server_loop_kqueue.c)
+endif()
+
+add_executable(ndc ${ndc_sources})
 target_compile_options(ndc PRIVATE -Wall -Wextra -Wpedantic)
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Using LTO for release build")
