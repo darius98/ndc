@@ -17,11 +17,9 @@ struct tcp_conn_table {
     int size;
     int n_buckets;
     struct tcp_conn_table_bucket* buckets;
-
-    int conn_buf_len;
 };
 
-struct tcp_conn_table* new_tcp_conn_table(int n_buckets, int bucket_init_cap, int conn_buf_len) {
+static struct tcp_conn_table* new_tcp_conn_table(int n_buckets, int bucket_init_cap) {
     struct tcp_conn_table* conn_table = malloc(sizeof(struct tcp_conn_table));
     if (conn_table == 0) {
         return 0;
@@ -46,7 +44,6 @@ struct tcp_conn_table* new_tcp_conn_table(int n_buckets, int bucket_init_cap, in
             return 0;
         }
     }
-    conn_table->conn_buf_len = conn_buf_len;
     return conn_table;
 }
 
@@ -80,9 +77,9 @@ static int tcp_conn_table_erase(struct tcp_conn_table* conn_table, struct tcp_co
     return -1;
 }
 
-struct tcp_conn* tcp_conn_table_lookup(struct tcp_conn_table* conn_table, int fd) {
-    int bucket_id = fd % conn_table->n_buckets;
-    struct tcp_conn_table_bucket* bucket = &conn_table->buckets[bucket_id];
+struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
+    int bucket_id = fd % server->conn_table->n_buckets;
+    struct tcp_conn_table_bucket* bucket = &server->conn_table->buckets[bucket_id];
     for (int i = 0; i < bucket->size; i++) {
         if (bucket->entries[i]->fd == fd) {
             return bucket->entries[i];
@@ -91,10 +88,25 @@ struct tcp_conn* tcp_conn_table_lookup(struct tcp_conn_table* conn_table, int fd
     return 0;
 }
 
-int init_tcp_server(int port, int max_clients) {
+struct tcp_server* init_tcp_server(struct http_req_queue* req_queue, int port, int max_clients, int n_buckets,
+                                   int bucket_init_cap, int conn_buf_len) {
+    struct tcp_server* server = malloc(sizeof(struct tcp_server));
+    if (server == 0) {
+        LOG_ERROR("Failed to allocate memory for tcp server structure");
+        return 0;
+    }
+
+    struct tcp_conn_table* conn_table = new_tcp_conn_table(n_buckets, bucket_init_cap);
+    if (conn_table == 0) {
+        LOG_ERROR("Failed to allocate memory for tcp server connections table structure");
+        return 0;
+    }
+
     int listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listen_fd < 0) {
-        LOG_FATAL("socket() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_ERROR("socket() failed errno=%d (%s)", errno, strerror(errno));
+        free(server);
+        return 0;
     }
 
     struct sockaddr_in server_addr;
@@ -103,20 +115,36 @@ int init_tcp_server(int port, int max_clients) {
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(port);
     if (bind(listen_fd, (const struct sockaddr *)&server_addr, sizeof(struct sockaddr_in)) < 0) {
-        LOG_FATAL("bind() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_ERROR("bind() failed errno=%d (%s)", errno, strerror(errno));
+        if (close(listen_fd) < 0) {
+            LOG_ERROR("close() failed errno=%d (%s)", errno, strerror(errno));
+        }
+        free(server);
+        return 0;
     }
+
     if (listen(listen_fd, max_clients) < 0) {
-        LOG_FATAL("listen() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_ERROR("listen() failed errno=%d (%s)", errno, strerror(errno));
+        if (close(listen_fd) < 0) {
+            LOG_ERROR("close() failed errno=%d (%s)", errno, strerror(errno));
+        }
+        free(server);
+        return 0;
     }
-    LOG_INFO("Running HTTP server on port %d", port);
-    return listen_fd;
+
+    server->req_queue = req_queue;
+    server->conn_table = conn_table;
+    server->listen_fd = listen_fd;
+    server->port = port;
+    server->conn_buf_len = conn_buf_len;
+    return server;
 }
 
-struct tcp_conn* accept_tcp_conn(struct tcp_conn_table* conn_table, int tcp_server_fd) {
+struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     int fd;
     struct sockaddr_in client_addr;
     socklen_t client_addr_len = sizeof(struct sockaddr_in);
-    fd = accept(tcp_server_fd, (struct sockaddr*)&client_addr, &client_addr_len);
+    fd = accept(server->listen_fd, (struct sockaddr*)&client_addr, &client_addr_len);
     if (fd < 0) {
         // TODO: Handle error better.
         LOG_FATAL("accept() failed errno=%d (%s)", errno, strerror(errno));
@@ -134,7 +162,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_conn_table* conn_table, int tcp_serv
         }
         return 0;
     }
-    conn->buf_cap = conn_table->conn_buf_len;
+    conn->buf_cap = server->conn_buf_len;
     conn->buf_len = 0;
     conn->buf = malloc(conn->buf_cap + 1);
     if (conn->buf == 0) {
@@ -150,7 +178,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_conn_table* conn_table, int tcp_serv
     conn->fd = fd;
     conn->ipv4 = ipv4;
     conn->port = port;
-    if (tcp_conn_table_insert(conn_table, conn) < 0) {
+    if (tcp_conn_table_insert(server->conn_table, conn) < 0) {
         LOG_ERROR("Failed to grow tcp connection table bucket");
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
@@ -164,7 +192,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_conn_table* conn_table, int tcp_serv
     return conn;
 }
 
-void recv_from_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table* conn_table, struct tcp_conn* conn) {
+void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     ssize_t num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
     if (num_bytes < 0) {
         // TODO: Handle error better.
@@ -179,10 +207,10 @@ void recv_from_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table*
     LOG_DEBUG("Received %zu bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf_len += num_bytes;
     conn->buf[conn->buf_len] = 0;
-    int bytes_read = read_http_reqs(req_queue, conn);
+    int bytes_read = read_http_reqs(server->req_queue, conn);
     if (bytes_read < 0) {
         // Errors logged in read_http_reqs.
-        close_tcp_conn(req_queue, conn_table, conn);
+        close_tcp_conn(server, conn);
     } else {
         if (bytes_read != conn->buf_len) {
             memcpy(conn->buf, conn->buf + bytes_read, conn->buf_len - bytes_read);
@@ -192,13 +220,13 @@ void recv_from_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table*
             LOG_ERROR(
                 "Buffer for connection %s:%d (fd=%d) is filled by a single HTTP request, will close this connection",
                 ipv4_str(conn->ipv4), conn->port, conn->fd);
-            close_tcp_conn(req_queue, conn_table, conn);
+            close_tcp_conn(server, conn);
         }
     }
 }
 
-void close_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table* conn_table, struct tcp_conn* conn) {
-    if (tcp_conn_table_erase(conn_table, conn) < 0) {
+void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
+    if (tcp_conn_table_erase(server->conn_table, conn) < 0) {
         LOG_ERROR(
             "connection %s:%d (fd=%d) is not in TCP connections table. Memory for this "
             "connection will not be reclaimed, so this message may indicate a memory leak.",
@@ -211,7 +239,7 @@ void close_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table* con
     }
     LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
     if (conn->cur_req != 0) {
-        delete_http_req(req_queue, conn->cur_req);
+        delete_http_req(server->req_queue, conn->cur_req);
         conn->cur_req = 0;
     }
     tcp_conn_dec_refcount(conn);

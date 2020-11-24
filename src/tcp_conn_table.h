@@ -19,17 +19,25 @@ struct tcp_conn {
 
 struct tcp_conn_table;
 
-struct tcp_conn_table* new_tcp_conn_table(int n_buckets, int bucket_init_cap, int conn_buf_len);
+struct tcp_server {
+    struct tcp_conn_table* conn_table;
+    struct http_req_queue* req_queue;
+    int listen_fd;
+    int port;
 
-struct tcp_conn* tcp_conn_table_lookup(struct tcp_conn_table* table, int fd);
+    int conn_buf_len;
+};
 
-int init_tcp_server(int port, int max_clients);
+struct tcp_server* init_tcp_server(struct http_req_queue* req_queue, int port, int max_clients, int n_buckets,
+                                   int bucket_init_cap, int conn_buf_len);
 
-struct tcp_conn* accept_tcp_conn(struct tcp_conn_table* table, int tcp_server_fd);
+struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 
-void recv_from_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table* table, struct tcp_conn* conn);
+struct tcp_conn* accept_tcp_conn(struct tcp_server* server);
 
-void close_tcp_conn(struct http_req_queue* req_queue, struct tcp_conn_table* table, struct tcp_conn* conn);
+void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
+
+void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
 
 void tcp_conn_inc_refcount(struct tcp_conn* conn);
 

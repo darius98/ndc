@@ -6,10 +6,6 @@
 
 int main() {
     init_logging(1, 0);
-    struct tcp_conn_table* table = new_tcp_conn_table(23, 4, 1 << 16);
-    if (table == 0) {
-        LOG_FATAL("Failed to allocate memory for tcp connection table");
-    }
     struct static_file_server* static_files = new_static_file_server("./");
     if (static_files == 0) {
         LOG_FATAL("Failed to allocate memory for static file server");
@@ -18,10 +14,10 @@ int main() {
     if (http_req_queue == 0) {
         LOG_FATAL("Failed to allocate memory for HTTP requests queue");
     }
-    int tcp_server_fd = init_tcp_server(1337, 16);
-    if (tcp_server_fd < 0) {
+    struct tcp_server* server = init_tcp_server(http_req_queue, 1337, 2048, 23, 4, 1 << 16);
+    if (server == 0) {
         return 1;
     }
-    run_tcp_server(http_req_queue, table, tcp_server_fd);
+    run_tcp_server(server);
     return 0;
 }
