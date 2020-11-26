@@ -13,7 +13,7 @@ int main() {
     if (http_req_queue == 0) {
         LOG_FATAL("Failed to allocate memory for HTTP requests queue");
     }
-    struct tcp_server* server = init_tcp_server(http_req_queue, 1337, 2048, 23, 4, 1 << 16);
+    struct tcp_server* server = init_tcp_server(1337, 2048, 23, 4, 1 << 16, http_req_queue);
     if (server == 0) {
         return 1;
     }

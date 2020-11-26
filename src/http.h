@@ -1,9 +1,9 @@
 #ifndef NDC_HTTP_H_
 #define NDC_HTTP_H_
 
-struct static_file_server;
+#include "tcp_server.h"
 
-struct tcp_conn;
+struct static_file_server;
 
 struct http_req {
     /// The underlying TCP connection.
@@ -47,11 +47,5 @@ struct http_req_queue;
 /// Allocate and initialize a http requests queue.
 /// Note: returns NULL on allocation failure.
 struct http_req_queue* new_http_req_queue(struct static_file_server* static_files, int req_buf_cap, int num_workers);
-
-/// Read all available HTTP requests from the start of the connection's buffer.
-/// Returns the number of bytes parsed from buf.
-int read_http_reqs(struct http_req_queue* req_queue, struct tcp_conn* conn);
-
-void delete_http_req(struct http_req_queue* req_queue, struct http_req* req);
 
 #endif

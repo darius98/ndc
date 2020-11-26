@@ -73,9 +73,10 @@ static struct http_req* http_req_queue_pop(struct http_req_queue* req_queue) {
     return req;
 }
 
-static void handle_http_request(struct http_req_queue* req_queue, struct http_req* req) {
-    serve_static_file(req_queue->static_files, req);
-    delete_http_req(req_queue, req);
+static void delete_http_req(struct http_req_queue* req_queue, struct http_req* req) {
+    tcp_conn_dec_refcount(req->conn);
+    free(req->buf);
+    free(req);
 }
 
 static void* http_worker(void* arg) {
@@ -83,7 +84,8 @@ static void* http_worker(void* arg) {
     while (atomic_load_explicit(&req_queue->stopped, memory_order_acquire) == 0) {
         struct http_req* req = http_req_queue_pop(req_queue);
         if (req != 0) {
-            handle_http_request(req_queue, req);
+            serve_static_file(req_queue->static_files, req);
+            delete_http_req(req_queue, req);
         }
     }
     return 0;
@@ -174,18 +176,19 @@ static char* find_next_clrf(char* s) {
     return strstr(s, "\r\n");
 }
 
-int read_http_reqs(struct http_req_queue* req_queue, struct tcp_conn* conn) {
+int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
+    struct http_req_queue* req_queue = cb_data;
     char* buf = conn->buf;
     char* initial_buf = conn->buf;
     while (1) {
-        struct http_req* req = conn->cur_req;
+        struct http_req* req = conn->user_data;
         if (req == 0) {
             req = new_http_req(req_queue, conn);
             if (req == 0) {
                 // Errors logged inside new_http_req.
                 return -1;
             }
-            conn->cur_req = req;
+            conn->user_data = req;
         }
         if (req->method == 0) {
             char* end = find_next_space(buf);
@@ -246,12 +249,13 @@ int read_http_reqs(struct http_req_queue* req_queue, struct tcp_conn* conn) {
         }
         // The request is fully parsed. Add it to the queue.
         http_req_queue_push(req_queue, req);
-        conn->cur_req = 0;
+        conn->user_data = 0;
     }
 }
 
-void delete_http_req(struct http_req_queue* req_queue, struct http_req* req) {
-    tcp_conn_dec_refcount(req->conn);
-    free(req->buf);
-    free(req);
+void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
+    if (conn->user_data != 0) {
+        delete_http_req((struct http_req_queue*)cb_data, (struct http_req*)conn->user_data);
+        conn->user_data = 0;
+    }
 }

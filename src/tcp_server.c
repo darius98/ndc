@@ -88,8 +88,8 @@ struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
     return 0;
 }
 
-struct tcp_server* init_tcp_server(struct http_req_queue* req_queue, int port, int max_clients, int n_buckets,
-                                   int bucket_init_cap, int conn_buf_len) {
+struct tcp_server* init_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
+                                   void* user_data) {
     struct tcp_server* server = malloc(sizeof(struct tcp_server));
     if (server == 0) {
         LOG_ERROR("Failed to allocate memory for tcp server structure");
@@ -114,7 +114,7 @@ struct tcp_server* init_tcp_server(struct http_req_queue* req_queue, int port, i
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(port);
-    if (bind(listen_fd, (const struct sockaddr *)&server_addr, sizeof(struct sockaddr_in)) < 0) {
+    if (bind(listen_fd, (const struct sockaddr*)&server_addr, sizeof(struct sockaddr_in)) < 0) {
         LOG_ERROR("bind() failed errno=%d (%s)", errno, strerror(errno));
         if (close(listen_fd) < 0) {
             LOG_ERROR("close() failed errno=%d (%s)", errno, strerror(errno));
@@ -132,11 +132,11 @@ struct tcp_server* init_tcp_server(struct http_req_queue* req_queue, int port, i
         return 0;
     }
 
-    server->req_queue = req_queue;
     server->conn_table = conn_table;
     server->listen_fd = listen_fd;
     server->port = port;
     server->conn_buf_len = conn_buf_len;
+    server->user_data = user_data;
     return server;
 }
 
@@ -162,6 +162,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         }
         return 0;
     }
+    conn->fd = fd;
     conn->buf_cap = server->conn_buf_len;
     conn->buf_len = 0;
     conn->buf = malloc(conn->buf_cap + 1);
@@ -174,8 +175,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         free(conn);
         return 0;
     }
-    conn->cur_req = 0;
-    conn->fd = fd;
+    conn->user_data = 0;
     conn->ipv4 = ipv4;
     conn->port = port;
     if (tcp_conn_table_insert(server->conn_table, conn) < 0) {
@@ -205,9 +205,9 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     LOG_DEBUG("Received %d bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf_len += num_bytes;
     conn->buf[conn->buf_len] = 0;
-    int bytes_read = read_http_reqs(server->req_queue, conn);
+    int bytes_read = tcp_conn_recv_callback(server->user_data, conn);
     if (bytes_read < 0) {
-        // Errors logged in read_http_reqs.
+        // Errors logged in tcp_conn_recv_callback.
         close_tcp_conn(server, conn);
     } else {
         if (bytes_read != conn->buf_len) {
@@ -237,10 +237,7 @@ void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
                   ipv4_str(conn->ipv4), conn->port, errno, strerror(errno));
     }
     LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
-    if (conn->cur_req != 0) {
-        delete_http_req(server->req_queue, conn->cur_req);
-        conn->cur_req = 0;
-    }
+    tcp_conn_before_close_callback(server->user_data, conn);
     tcp_conn_dec_refcount(conn);
 }
 
