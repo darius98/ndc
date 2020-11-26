@@ -45,7 +45,7 @@ struct http_req {
 struct http_req_queue;
 
 /// Allocate and initialize a http requests queue.
-/// Note: returns NULL on allocation failure.
+/// Note: returns 0 on allocation failure.
 struct http_req_queue* new_http_req_queue(struct static_file_server* static_files, int req_buf_cap, int num_workers);
 
 #endif

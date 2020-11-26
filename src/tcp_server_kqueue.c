@@ -21,7 +21,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
 
     struct tcp_conn *conn;
     while (1) {
-        int n_ev = kevent(kqueue_fd, NULL, 0, &event, 1, NULL);
+        int n_ev = kevent(kqueue_fd, 0, 0, &event, 1, 0);
         if (n_ev < 0) {
             // TODO: Handle error better.
             LOG_FATAL("Server: kevent() failed errno=%d (%s)", errno, strerror(errno));

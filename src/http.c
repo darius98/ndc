@@ -180,6 +180,7 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
     struct http_req_queue* req_queue = cb_data;
     char* buf = conn->buf;
     char* initial_buf = conn->buf;
+    int bytes_read;
     while (1) {
         struct http_req* req = conn->user_data;
         if (req == 0) {
@@ -193,7 +194,7 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
         if (req->method == 0) {
             char* end = find_next_space(buf);
             if (end == 0) {
-                return buf - initial_buf;
+                goto done_parsing;
             }
             char* method = append_to_http_req(req, buf, end);
             if (method == 0) {
@@ -205,7 +206,7 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
         if (req->path == 0) {
             char* end = find_next_space(buf);
             if (end == 0) {
-                return buf - initial_buf;
+                goto done_parsing;
             }
             char* path = append_to_http_req(req, buf, end);
             if (path == 0) {
@@ -217,7 +218,7 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
         if (req->version == 0) {
             char* end = find_next_clrf(buf);
             if (end == 0) {
-                return buf - initial_buf;
+                goto done_parsing;
             }
             char* version = append_to_http_req(req, buf, end);
             if (version == 0) {
@@ -230,7 +231,7 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
         while (1) {
             char* end = find_next_clrf(buf);
             if (end == 0) {
-                return buf - initial_buf;
+                goto done_parsing;
             }
             if (end == buf) {
                 // headers are done.
@@ -251,6 +252,14 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
         http_req_queue_push(req_queue, req);
         conn->user_data = 0;
     }
+
+done_parsing:
+    bytes_read = buf - initial_buf;
+    if (bytes_read != conn->buf_len) {
+        memmove(conn->buf, conn->buf + bytes_read, conn->buf_len - bytes_read);
+    }
+    conn->buf_len -= bytes_read;
+    return bytes_read;
 }
 
 void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {

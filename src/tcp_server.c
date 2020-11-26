@@ -162,9 +162,10 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         }
         return 0;
     }
+    atomic_store_explicit(&conn->ref_count, 1, memory_order_release);
     conn->fd = fd;
-    conn->buf_cap = server->conn_buf_len;
     conn->buf_len = 0;
+    conn->buf_cap = server->conn_buf_len;
     conn->buf = malloc(conn->buf_cap + 1);
     if (conn->buf == 0) {
         LOG_ERROR("Failed to allocate buffer for new connection: %s:%d", ipv4_str(ipv4), port);
@@ -205,26 +206,19 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     LOG_DEBUG("Received %d bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf_len += num_bytes;
     conn->buf[conn->buf_len] = 0;
-    int bytes_read = tcp_conn_recv_callback(server->user_data, conn);
-    if (bytes_read < 0) {
+    if (tcp_conn_recv_callback(server->user_data, conn) < 0) {
         // Errors logged in tcp_conn_recv_callback.
         close_tcp_conn(server, conn);
-    } else {
-        if (bytes_read != conn->buf_len) {
-            memcpy(conn->buf, conn->buf + bytes_read, conn->buf_len - bytes_read);
-        }
-        conn->buf_len -= bytes_read;
-        if (conn->buf_len == conn->buf_cap) {
-            LOG_ERROR(
-                "Buffer for connection %s:%d (fd=%d) is filled by a single HTTP request, will close this connection",
-                ipv4_str(conn->ipv4), conn->port, conn->fd);
-            close_tcp_conn(server, conn);
-        }
+    } else if (conn->buf_len == conn->buf_cap) {
+        LOG_ERROR("Buffer full for connection %s:%d (fd=%d), will close connection", ipv4_str(conn->ipv4), conn->port,
+                  conn->fd);
+        close_tcp_conn(server, conn);
     }
-    return bytes_read;
+    return 1;
 }
 
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
+    tcp_conn_before_close_callback(server->user_data, conn);
     if (tcp_conn_table_erase(server->conn_table, conn) < 0) {
         LOG_ERROR(
             "connection %s:%d (fd=%d) is not in TCP connections table. Memory for this "
@@ -237,7 +231,6 @@ void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
                   ipv4_str(conn->ipv4), conn->port, errno, strerror(errno));
     }
     LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
-    tcp_conn_before_close_callback(server->user_data, conn);
     tcp_conn_dec_refcount(conn);
 }
 
