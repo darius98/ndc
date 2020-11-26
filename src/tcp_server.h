@@ -35,7 +35,7 @@ struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 
 struct tcp_conn* accept_tcp_conn(struct tcp_server* server);
 
-void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
+int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
 
 void tcp_conn_inc_refcount(struct tcp_conn* conn);
 

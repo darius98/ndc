@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  ndc_ubuntu:
+    image: darius98/lightcxx_ubuntu_20_04
+    command: /ndc/scripts/run_in_docker.sh
+    working_dir: /ndc
+    environment:
+      NDC_IMAGE_NAME: "ubuntu_20_04"
+    ports:
+      - 1337:1337
+    volumes:
+      - ./:/ndc

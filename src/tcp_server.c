@@ -192,19 +192,17 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     return conn;
 }
 
-void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
-    ssize_t num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
+int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
+    int num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
     if (num_bytes < 0) {
         // TODO: Handle error better.
         LOG_FATAL("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
                   conn->fd, errno, strerror(errno));
     }
     if (num_bytes == 0) {
-        LOG_WARN("Spurious wake-up of connection %s:%d (fd=%d), had no bytes to read", ipv4_str(conn->ipv4), conn->port,
-                 conn->fd);
-        return;
+        return 0;
     }
-    LOG_DEBUG("Received %zu bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
+    LOG_DEBUG("Received %d bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf_len += num_bytes;
     conn->buf[conn->buf_len] = 0;
     int bytes_read = read_http_reqs(server->req_queue, conn);
@@ -223,6 +221,7 @@ void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
             close_tcp_conn(server, conn);
         }
     }
+    return bytes_read;
 }
 
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
