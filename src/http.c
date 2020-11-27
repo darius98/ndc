@@ -9,7 +9,7 @@
 #include "static_file_server.h"
 #include "tcp_server.h"
 
-struct http_req_queue {
+struct http_server {
     struct http_req* head;
     struct http_req* tail;
 
@@ -26,104 +26,104 @@ struct http_req_queue {
     struct static_file_server* static_files;
 };
 
-static void http_req_queue_push(struct http_req_queue* req_queue, struct http_req* req) {
-    int err = pthread_mutex_lock(&req_queue->lock);
+static void http_server_push_req(struct http_server* server, struct http_req* req) {
+    int err = pthread_mutex_lock(&server->lock);
     if (err != 0) {
         LOG_FATAL("pthread_mutex_lock() failed with error=%d", err);
     }
     req->next = 0;
-    if (req_queue->tail != 0) {
-        req_queue->tail->next = req;
+    if (server->tail != 0) {
+        server->tail->next = req;
     }
-    req_queue->tail = req;
-    if (req_queue->head == 0) {
-        req_queue->head = req;
+    server->tail = req;
+    if (server->head == 0) {
+        server->head = req;
     }
-    err = pthread_mutex_unlock(&req_queue->lock);
+    err = pthread_mutex_unlock(&server->lock);
     if (err != 0) {
         LOG_FATAL("pthread_mutex_unlock() failed with error=%d", err);
     }
-    err = pthread_cond_signal(&req_queue->cond_var);
+    err = pthread_cond_signal(&server->cond_var);
     if (err != 0) {
         LOG_FATAL("pthread_cond_signal() failed with error=%d", err);
     }
 }
 
-static struct http_req* http_req_queue_pop(struct http_req_queue* req_queue) {
-    int err = pthread_mutex_lock(&req_queue->lock);
+static struct http_req* http_server_pop_req(struct http_server* server) {
+    int err = pthread_mutex_lock(&server->lock);
     if (err != 0) {
         LOG_FATAL("pthread_mutex_lock() failed with error=%d", err);
     }
-    err = pthread_cond_wait(&req_queue->cond_var, &req_queue->lock);
+    err = pthread_cond_wait(&server->cond_var, &server->lock);
     if (err != 0) {
         LOG_FATAL("pthread_cond_wait() failed with error=%d", err);
     }
-    struct http_req* req = req_queue->head;
+    struct http_req* req = server->head;
     if (req != 0) {
-        req_queue->head = req->next;
-        if (req_queue->head == 0) {
-            req_queue->tail = 0;
+        server->head = req->next;
+        if (server->head == 0) {
+            server->tail = 0;
         }
         req->next = 0;
     }
-    err = pthread_mutex_unlock(&req_queue->lock);
+    err = pthread_mutex_unlock(&server->lock);
     if (err != 0) {
         LOG_FATAL("pthread_mutex_unlock() failed with error=%d", err);
     }
     return req;
 }
 
-static void delete_http_req(struct http_req_queue* req_queue, struct http_req* req) {
+static void delete_http_req(struct http_server* server, struct http_req* req) {
     tcp_conn_dec_refcount(req->conn);
     free(req->buf);
     free(req);
 }
 
 static void* http_worker(void* arg) {
-    struct http_req_queue* req_queue = (struct http_req_queue*)arg;
-    while (atomic_load_explicit(&req_queue->stopped, memory_order_acquire) == 0) {
-        struct http_req* req = http_req_queue_pop(req_queue);
+    struct http_server* server = (struct http_server*)arg;
+    while (atomic_load_explicit(&server->stopped, memory_order_acquire) == 0) {
+        struct http_req* req = http_server_pop_req(server);
         if (req != 0) {
-            serve_static_file(req_queue->static_files, req);
-            delete_http_req(req_queue, req);
+            serve_static_file(server->static_files, req);
+            delete_http_req(server, req);
         }
     }
     return 0;
 }
 
-struct http_req_queue* new_http_req_queue(struct static_file_server* static_files, int req_buf_cap, int num_workers) {
-    struct http_req_queue* queue = malloc(sizeof(struct http_req_queue));
-    if (queue == 0) {
+struct http_server* new_http_server(struct static_file_server* static_files, int req_buf_cap, int num_workers) {
+    struct http_server* server = malloc(sizeof(struct http_server));
+    if (server == 0) {
         return 0;
     }
-    queue->req_buf_cap = req_buf_cap;
-    queue->static_files = static_files;
-    queue->head = 0;
-    queue->tail = 0;
-    int err = pthread_mutex_init(&queue->lock, 0);
+    server->req_buf_cap = req_buf_cap;
+    server->static_files = static_files;
+    server->head = 0;
+    server->tail = 0;
+    int err = pthread_mutex_init(&server->lock, 0);
     if (err != 0) {
         LOG_FATAL("pthread_mutex_init() failed with error=%d", err);
     }
-    err = pthread_cond_init(&queue->cond_var, 0);
+    err = pthread_cond_init(&server->cond_var, 0);
     if (err != 0) {
         LOG_FATAL("pthread_cond_init() failed with error=%d", err);
     }
-    atomic_store_explicit(&queue->stopped, 0, memory_order_release);
-    queue->num_workers = num_workers;
-    queue->workers = malloc(num_workers * sizeof(pthread_t));
-    if (queue->workers == 0) {
+    atomic_store_explicit(&server->stopped, 0, memory_order_release);
+    server->num_workers = num_workers;
+    server->workers = malloc(num_workers * sizeof(pthread_t));
+    if (server->workers == 0) {
         LOG_FATAL("Failed to allocate memory for HTTP workers.");
     }
     for (int i = 0; i < num_workers; i++) {
-        err = pthread_create(&queue->workers[i], 0, http_worker, queue);
+        err = pthread_create(&server->workers[i], 0, http_worker, server);
         if (err != 0) {
             LOG_FATAL("Failed to start HTTP worker error=%d", err);
         }
     }
-    return queue;
+    return server;
 }
 
-static struct http_req* new_http_req(struct http_req_queue* req_queue, struct tcp_conn* conn) {
+static struct http_req* new_http_req(struct http_server* server, struct tcp_conn* conn) {
     int ipv4 = conn->ipv4;
     int port = conn->port;
     struct http_req* req = malloc(sizeof(struct http_req));
@@ -133,7 +133,7 @@ static struct http_req* new_http_req(struct http_req_queue* req_queue, struct tc
     }
 
     req->buf_len = 0;
-    req->buf_cap = req_queue->req_buf_cap;
+    req->buf_cap = server->req_buf_cap;
     req->buf = malloc(req->buf_cap);
     if (req->buf == 0) {
         LOG_ERROR("Memory allocation failure: buffer for new http request, will close connection to %s:%d",
@@ -177,14 +177,14 @@ static char* find_next_clrf(char* s) {
 }
 
 int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
-    struct http_req_queue* req_queue = cb_data;
+    struct http_server* server = cb_data;
     char* buf = conn->buf;
     char* initial_buf = conn->buf;
     int bytes_read;
     while (1) {
         struct http_req* req = conn->user_data;
         if (req == 0) {
-            req = new_http_req(req_queue, conn);
+            req = new_http_req(server, conn);
             if (req == 0) {
                 // Errors logged inside new_http_req.
                 return -1;
@@ -249,7 +249,7 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
             // TODO: We still need to receive the request body.
         }
         // The request is fully parsed. Add it to the queue.
-        http_req_queue_push(req_queue, req);
+        http_server_push_req(server, req);
         conn->user_data = 0;
     }
 
@@ -264,7 +264,7 @@ done_parsing:
 
 void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
     if (conn->user_data != 0) {
-        delete_http_req((struct http_req_queue*)cb_data, (struct http_req*)conn->user_data);
+        delete_http_req((struct http_server*)cb_data, (struct http_req*)conn->user_data);
         conn->user_data = 0;
     }
 }
