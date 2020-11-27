@@ -11,7 +11,7 @@ check_include_files("sys/event.h" USE_KQUEUE)
 check_include_files("sys/epoll.h" USE_EPOLL)
 
 set(ndc_sources
-        src/http.c
+        src/http_server.c
         src/logging.c
         src/main.c
         src/static_file_server.c
