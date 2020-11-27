@@ -81,4 +81,12 @@ const char* ipv4_str(int ipv4);
         abort();                      \
     } while (0)
 
+#define ASSERT(c)                                     \
+    do {                                              \
+        if (!(c)) {                                   \
+            INTERNAL_LOG_(4, "Assertion failed: " #c) \
+            abort();                                  \
+        }                                             \
+    } while (0)
+
 #endif

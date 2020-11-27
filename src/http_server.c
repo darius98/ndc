@@ -181,14 +181,8 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
     char* initial_buf = buf;
     while (1) {
         struct http_req* req = conn->user_data;
-        if (req == 0) {
-            req = new_http_req(server, conn);
-            if (req == 0) {
-                // Errors logged inside new_http_req.
-                return -1;
-            }
-            conn->user_data = req;
-        }
+        ASSERT(req != 0);
+
         if (req->method == 0) {
             char* end = find_next_space(buf);
             if (end == 0) {
@@ -249,10 +243,25 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
         // The request is fully parsed. Add it to the queue.
         http_server_push_req(server, req);
         conn->user_data = 0;
+
+        req = new_http_req(server, conn);
+        if (req == 0) {
+            return -1;
+        }
+        conn->user_data = req;
     }
 }
 
-int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
+int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn) {
+    struct http_req* req = new_http_req((struct http_server*)cb_data, conn);
+    if (req == 0) {
+        return -1;
+    }
+    conn->user_data = req;
+    return 0;
+}
+
+int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn) {
     int bytes_read = read_http_reqs((struct http_server*)cb_data, conn);
     if (bytes_read != conn->buf_len) {
         memmove(conn->buf, conn->buf + bytes_read, conn->buf_len - bytes_read);
@@ -261,9 +270,10 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
     return bytes_read;
 }
 
-void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
+int tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
     if (conn->user_data != 0) {
         delete_http_req((struct http_server*)cb_data, (struct http_req*)conn->user_data);
         conn->user_data = 0;
     }
+    return 0;
 }

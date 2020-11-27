@@ -189,6 +189,15 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         free(conn);
         return 0;
     }
+    if (tcp_conn_after_open_callback(server->user_data, conn) < 0) {
+        if (close(fd) < 0) {
+            LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
+                      port, errno, strerror(errno));
+        }
+        free(conn->buf);
+        free(conn);
+        return 0;
+    }
     LOG_DEBUG("TCP client connected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
     return conn;
 }
@@ -206,8 +215,7 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     LOG_DEBUG("Received %d bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf_len += num_bytes;
     conn->buf[conn->buf_len] = 0;
-    if (tcp_conn_recv_callback(server->user_data, conn) < 0) {
-        // Errors logged in tcp_conn_recv_callback.
+    if (tcp_conn_on_recv_callback(server->user_data, conn) < 0) {
         close_tcp_conn(server, conn);
     } else if (conn->buf_len == conn->buf_cap) {
         LOG_ERROR("Buffer full for connection %s:%d (fd=%d), will close connection", ipv4_str(conn->ipv4), conn->port,
@@ -218,7 +226,11 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
 }
 
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
-    tcp_conn_before_close_callback(server->user_data, conn);
+    if (tcp_conn_before_close_callback(server->user_data, conn) < 0) {
+        // If the client fails to close the connection on their part,
+        // leak the connection rather than break the application.
+        return;
+    }
     if (tcp_conn_table_erase(server->conn_table, conn) < 0) {
         LOG_ERROR(
             "connection %s:%d (fd=%d) is not in TCP connections table. Memory for this "

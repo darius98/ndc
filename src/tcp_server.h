@@ -46,8 +46,10 @@ void run_tcp_server_loop(struct tcp_server* server);
 
 // These callbacks are not implemented in the TCP server.
 
-int tcp_conn_recv_callback(void* user_data, struct tcp_conn* conn);
+int tcp_conn_after_open_callback(void* user_data, struct tcp_conn* conn);
 
-void tcp_conn_before_close_callback(void* user_data, struct tcp_conn* conn);
+int tcp_conn_on_recv_callback(void* user_data, struct tcp_conn* conn);
+
+int tcp_conn_before_close_callback(void* user_data, struct tcp_conn* conn);
 
 #endif
