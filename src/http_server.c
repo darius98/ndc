@@ -25,10 +25,7 @@ struct http_server {
 };
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
-    int err = pthread_mutex_lock(&server->lock);
-    if (err != 0) {
-        LOG_FATAL("pthread_mutex_lock() failed with error=%d", err);
-    }
+    ASSERT_0(pthread_mutex_lock(&server->lock));
     req->next = 0;
     if (server->tail != 0) {
         server->tail->next = req;
@@ -37,25 +34,13 @@ static void http_server_push_req(struct http_server* server, struct http_req* re
     if (server->head == 0) {
         server->head = req;
     }
-    err = pthread_mutex_unlock(&server->lock);
-    if (err != 0) {
-        LOG_FATAL("pthread_mutex_unlock() failed with error=%d", err);
-    }
-    err = pthread_cond_signal(&server->cond_var);
-    if (err != 0) {
-        LOG_FATAL("pthread_cond_signal() failed with error=%d", err);
-    }
+    ASSERT_0(pthread_mutex_unlock(&server->lock));
+    ASSERT_0(pthread_cond_signal(&server->cond_var));
 }
 
 static struct http_req* http_server_pop_req(struct http_server* server) {
-    int err = pthread_mutex_lock(&server->lock);
-    if (err != 0) {
-        LOG_FATAL("pthread_mutex_lock() failed with error=%d", err);
-    }
-    err = pthread_cond_wait(&server->cond_var, &server->lock);
-    if (err != 0) {
-        LOG_FATAL("pthread_cond_wait() failed with error=%d", err);
-    }
+    ASSERT_0(pthread_mutex_lock(&server->lock));
+    ASSERT_0(pthread_cond_wait(&server->cond_var, &server->lock));
     struct http_req* req = server->head;
     if (req != 0) {
         server->head = req->next;
@@ -64,10 +49,7 @@ static struct http_req* http_server_pop_req(struct http_server* server) {
         }
         req->next = 0;
     }
-    err = pthread_mutex_unlock(&server->lock);
-    if (err != 0) {
-        LOG_FATAL("pthread_mutex_unlock() failed with error=%d", err);
-    }
+    ASSERT_0(pthread_mutex_unlock(&server->lock));
     return req;
 }
 
@@ -95,6 +77,7 @@ static void* http_worker(void* arg) {
 struct http_server* new_http_server(int req_buf_cap, int num_workers, void* cb_data) {
     struct http_server* server = malloc(sizeof(struct http_server));
     if (server == 0) {
+        LOG_ERROR("Failed to allocate memory for HTTP server");
         return 0;
     }
     server->head = 0;
@@ -103,22 +86,59 @@ struct http_server* new_http_server(int req_buf_cap, int num_workers, void* cb_d
     server->cb_data = cb_data;
     int err = pthread_mutex_init(&server->lock, 0);
     if (err != 0) {
-        LOG_FATAL("pthread_mutex_init() failed with error=%d", err);
+        LOG_ERROR("Failed to initialize HTTP server: pthread_mutex_init() failed with error=%d", err);
+        free(server);
+        return 0;
     }
     err = pthread_cond_init(&server->cond_var, 0);
     if (err != 0) {
-        LOG_FATAL("pthread_cond_init() failed with error=%d", err);
+        LOG_ERROR("Failed to initialize HTTP server: pthread_cond_init() failed with error=%d", err);
+        err = pthread_mutex_destroy(&server->lock);
+        if (err != 0) {
+            LOG_ERROR("Failed to destroy HTTP requests queue mutex: pthread_mutex_destroy() failed with error=%d", err);
+        }
+        free(server);
+        return 0;
     }
     atomic_store_explicit(&server->stopped, 0, memory_order_release);
     server->num_workers = num_workers;
     server->workers = malloc(num_workers * sizeof(pthread_t));
     if (server->workers == 0) {
-        LOG_FATAL("Failed to allocate memory for HTTP workers.");
+        LOG_ERROR("Failed to allocate memory for HTTP worker threads array.");
+        err = pthread_cond_destroy(&server->cond_var);
+        if (err != 0) {
+            LOG_ERROR("Failed to destroy HTTP requests queue mutex: pthread_mutex_destroy() failed with error=%d", err);
+        }
+        err = pthread_mutex_destroy(&server->lock);
+        if (err != 0) {
+            LOG_ERROR("Failed to destroy HTTP requests queue mutex: pthread_mutex_destroy() failed with error=%d", err);
+        }
+        free(server);
+        return 0;
     }
     for (int i = 0; i < num_workers; i++) {
         err = pthread_create(&server->workers[i], 0, http_worker, server);
         if (err != 0) {
-            LOG_FATAL("Failed to start HTTP worker error=%d", err);
+            LOG_ERROR("Failed to start HTTP worker: pthread_create() failed with error=%d", err);
+            atomic_store_explicit(&server->stopped, 1, memory_order_release);
+            pthread_cond_broadcast(&server->cond_var);
+            for (int j = 0; j < i; i++) {
+                err = pthread_join(server->workers[j], 0);
+                if (err != 0) {
+                    LOG_ERROR("Failed to join HTTP worker: pthread_join() failed with error=%d", err);
+                }
+            }
+            err = pthread_cond_destroy(&server->cond_var);
+            if (err != 0) {
+                LOG_ERROR("Failed to destroy HTTP requests queue mutex: pthread_mutex_destroy() failed with error=%d", err);
+            }
+            err = pthread_mutex_destroy(&server->lock);
+            if (err != 0) {
+                LOG_ERROR("Failed to destroy HTTP requests queue mutex: pthread_mutex_destroy() failed with error=%d", err);
+            }
+            free(server->workers);
+            free(server);
+            return 0;
         }
     }
     return server;

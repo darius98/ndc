@@ -1,22 +1,27 @@
-#include "tcp_server.h"
-
 #include <errno.h>
 #include <string.h>
 #include <sys/epoll.h>
+#include <unistd.h>
 
 #include "logging.h"
+#include "tcp_server.h"
 
 void run_tcp_server_loop(struct tcp_server *server) {
     int epoll_fd = epoll_create1(0);
     if (epoll_fd < 0) {
-        LOG_FATAL("Failed to start server: epoll_create1() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_ERROR("Failed to start server: epoll_create1() failed errno=%d (%s)", errno, strerror(errno));
+        return;
     }
 
     struct epoll_event event;
     event.events = EPOLLIN;
     event.data.fd = server->listen_fd;
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server->listen_fd, &event) < 0 && errno != EINTR) {
-        LOG_FATAL("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_ERROR("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, strerror(errno));
+        if (close(epoll_fd) < 0) {
+            LOG_ERROR("Failed to close epoll file: close() failed errno=%d (%s)", errno, strerror(errno));
+        }
+        return;
     }
 
     LOG_INFO("Running HTTP server on port %d", server->port);
@@ -55,8 +60,14 @@ void run_tcp_server_loop(struct tcp_server *server) {
             if (conn == 0) {
                 LOG_WARN("Received epoll event on fd=%d, but could not find connection", event_fd);
             } else {
-                LOG_DEBUG("Received epoll event on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
-                if (recv_from_tcp_conn(server, conn) == 0) {
+                LOG_DEBUG("Received epoll event on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
+                          conn->fd);
+                int n_bytes = recv_from_tcp_conn(server, conn);
+                if (n_bytes <= 0) {
+                    if (n_bytes < 0) {
+                        LOG_ERROR("Closing TCP connection to %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
+                                  conn->fd);
+                    }
                     close_tcp_conn(server, conn);
                 }
             }

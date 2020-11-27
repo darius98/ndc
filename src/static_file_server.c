@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include "http_server.h"
+#include "tcp_server.h"
 #include "logging.h"
 
 // TODO: Rewrite everything.
@@ -36,11 +37,13 @@ static struct known_extension known_extensions[NUM_KNOWN_EXTENSIONS] = {
 struct static_file_server* new_static_file_server(const char* base_dir) {
     struct static_file_server* server = malloc(sizeof(struct static_file_server));
     if (server == 0) {
+        LOG_ERROR("Failed to allocate memory for static file server");
         return 0;
     }
     server->base_dir_len = strlen(base_dir);
     server->base_dir = malloc(server->base_dir_len + 1);
     if (server->base_dir == 0) {
+        LOG_ERROR("Failed to allocate memory for static file server base_dir string.");
         free(server);
         return 0;
     }

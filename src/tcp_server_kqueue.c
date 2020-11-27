@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/event.h>
+#include <unistd.h>
 
 #include "logging.h"
 #include "tcp_server.h"
@@ -8,13 +9,18 @@
 void run_tcp_server_loop(struct tcp_server *server) {
     int kqueue_fd = kqueue();
     if (kqueue_fd < 0) {
-        LOG_FATAL("Failed to start server: kqueue() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_ERROR("Failed to start TCP server: kqueue() failed errno=%d (%s)", errno, strerror(errno));
+        return;
     }
 
     struct kevent event;
     EV_SET(&event, server->listen_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
-        LOG_FATAL("Failed to start server: kevent() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_ERROR("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, strerror(errno));
+        if (close(kqueue_fd) < 0) {
+            LOG_ERROR("Failed to close kqueue file: close() failed errno=%d (%s)", errno, strerror(errno));
+        }
+        return;
     }
 
     LOG_INFO("Running HTTP server on port %d", server->port);
@@ -56,9 +62,16 @@ void run_tcp_server_loop(struct tcp_server *server) {
                 if (event.flags & EV_EOF) {
                     close_tcp_conn(server, conn);
                 } else if (event.filter & EVFILT_READ) {
-                    if (recv_from_tcp_conn(server, conn) == 0) {
-                        LOG_WARN("Spurious wake-up of connection %s:%d (fd=%d), had no bytes to read",
-                                 ipv4_str(conn->ipv4), conn->port, conn->fd);
+                    int n_bytes = recv_from_tcp_conn(server, conn);
+                    if (n_bytes <= 0) {
+                        if (n_bytes == 0) {
+                            LOG_WARN("Spurious wake-up of connection %s:%d (fd=%d), had no bytes to read",
+                                     ipv4_str(conn->ipv4), conn->port, conn->fd);
+                        } else {
+                            LOG_ERROR("Closing TCP connection to %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
+                                      conn->fd);
+                            close_tcp_conn(server, conn);
+                        }
                     }
                 } else {
                     LOG_ERROR("Received unexpected event from kevent() fd=%d, event.flags=%d, event.filter=%u",

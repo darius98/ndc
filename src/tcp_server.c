@@ -148,8 +148,8 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     socklen_t client_addr_len = sizeof(struct sockaddr_in);
     fd = accept(server->listen_fd, (struct sockaddr*)&client_addr, &client_addr_len);
     if (fd < 0) {
-        // TODO: Handle error better.
-        LOG_FATAL("accept() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_ERROR("Failed to accept new TCP connection: accept() failed errno=%d (%s)", errno, strerror(errno));
+        return 0;
     }
 
     int ipv4 = client_addr.sin_addr.s_addr;
@@ -207,9 +207,9 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
 int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     int num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
     if (num_bytes < 0) {
-        // TODO: Handle error better.
-        LOG_FATAL("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
+        LOG_ERROR("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
                   conn->fd, errno, strerror(errno));
+        return -1;
     }
     if (num_bytes == 0) {
         return 0;
@@ -224,7 +224,7 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
                   conn->fd);
         close_tcp_conn(server, conn);
     }
-    return 1;
+    return num_bytes;
 }
 
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {

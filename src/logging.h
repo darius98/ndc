@@ -77,15 +77,24 @@ const char* ipv4_str(int ipv4);
 #define LOG_FATAL(...)                \
     do {                              \
         INTERNAL_LOG_(4, __VA_ARGS__) \
-        internal_log_die();                      \
+        internal_log_die();           \
     } while (0)
 
 #define ASSERT(c)                                     \
     do {                                              \
         if (!(c)) {                                   \
             INTERNAL_LOG_(4, "Assertion failed: " #c) \
-            internal_log_die();                                  \
+            internal_log_die();                       \
         }                                             \
+    } while (0)
+
+#define ASSERT_0(expr)                                                                \
+    do {                                                                              \
+        int EXPR_RESULT = (expr);                                                     \
+        if (EXPR_RESULT != 0) {                                                       \
+            INTERNAL_LOG_(4, "Assertion failed: " #expr " == 0 (is %d)", EXPR_RESULT) \
+            internal_log_die();                                                       \
+        }                                                                             \
     } while (0)
 
 #endif
