@@ -1,7 +1,7 @@
 #ifndef NDC_HTTP_H_
 #define NDC_HTTP_H_
 
-#include "tcp_server.h"
+struct tcp_conn;
 
 struct http_req {
     /// The underlying TCP connection.

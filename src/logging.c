@@ -3,6 +3,8 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 
 int internal_log_min_level;
@@ -10,7 +12,7 @@ int internal_log_min_level;
 static pthread_mutex_t logging_mutex;
 static int logging_log_filename_and_lineno;
 static const char* level_name[] = {"D", "I", "W", "E", "F"};
-static char tm_buffer[22]; // Format is [YYYY-MM-DD HH:mm:ss], of length 21
+static char tm_buffer[22];  // Format is [YYYY-MM-DD HH:mm:ss], of length 21
 static char ipv4_str_buf[INET_ADDRSTRLEN];
 
 void init_logging(int log_filename_and_lineno, int min_level) {
@@ -52,6 +54,10 @@ void internal_log_message(const char* filename, int lineno, int level, const cha
     va_start(args, fmt);
     vfprintf(stderr, fmt, args);
     fprintf(stderr, "\n");
+}
+
+void internal_log_die() {
+    abort();
 }
 
 const char* ipv4_str(int ipv4) {

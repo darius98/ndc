@@ -1,11 +1,8 @@
 #ifndef NDC_TCP_SERVER_H_
 #define NDC_TCP_SERVER_H_
 
-#include <netinet/in.h>
-#include <stdatomic.h>
-
 struct tcp_conn {
-    atomic_int ref_count;
+    _Atomic(int) ref_count;
     int fd;
     int buf_len;
     int buf_cap;

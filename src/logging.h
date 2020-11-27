@@ -1,9 +1,6 @@
 #ifndef NDC_LOGGING_H_
 #define NDC_LOGGING_H_
 
-#include <stdio.h>
-#include <stdlib.h>
-
 void init_logging(int log_filename_and_lineno, int min_level);
 
 extern int internal_log_min_level;
@@ -14,6 +11,8 @@ void internal_log_unlock();
 
 void internal_log_message(const char* filename, int lineno, int level, const char* fmt, ...)
     __attribute__((format(printf, 4, 5)));
+
+__attribute__((noreturn)) void internal_log_die();
 
 const char* ipv4_str(int ipv4);
 
@@ -78,14 +77,14 @@ const char* ipv4_str(int ipv4);
 #define LOG_FATAL(...)                \
     do {                              \
         INTERNAL_LOG_(4, __VA_ARGS__) \
-        abort();                      \
+        internal_log_die();                      \
     } while (0)
 
 #define ASSERT(c)                                     \
     do {                                              \
         if (!(c)) {                                   \
             INTERNAL_LOG_(4, "Assertion failed: " #c) \
-            abort();                                  \
+            internal_log_die();                                  \
         }                                             \
     } while (0)
 
