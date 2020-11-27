@@ -24,11 +24,11 @@ struct tcp_server {
 
     int conn_buf_len;
 
-    void* user_data;
+    void* cb_data;
 };
 
 struct tcp_server* init_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
-                                   void* user_data);
+                                   void* cb_data);
 
 struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 
@@ -46,10 +46,10 @@ void run_tcp_server_loop(struct tcp_server* server);
 
 // These callbacks are not implemented in the TCP server.
 
-int tcp_conn_after_open_callback(void* user_data, struct tcp_conn* conn);
+int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn);
 
-int tcp_conn_on_recv_callback(void* user_data, struct tcp_conn* conn);
+int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn);
 
-int tcp_conn_before_close_callback(void* user_data, struct tcp_conn* conn);
+int tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn);
 
 #endif

@@ -9,7 +9,7 @@ int main() {
     if (static_file_server == 0) {
         LOG_FATAL("Failed to allocate memory for static file server");
     }
-    struct http_server* http_server = new_http_server(static_file_server, 1 << 16, 4);
+    struct http_server* http_server = new_http_server(1 << 16, 4, static_file_server);
     if (http_server == 0) {
         LOG_FATAL("Failed to allocate memory for HTTP requests queue");
     }

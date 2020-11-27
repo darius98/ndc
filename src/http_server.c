@@ -6,7 +6,6 @@
 #include <string.h>
 
 #include "logging.h"
-#include "static_file_server.h"
 #include "tcp_server.h"
 
 struct http_server {
@@ -17,13 +16,12 @@ struct http_server {
     pthread_cond_t cond_var;
     atomic_int stopped;
 
+    void* cb_data;
+
     int req_buf_cap;
 
     int num_workers;
     pthread_t* workers;
-
-    // Sub-servers
-    struct static_file_server* static_files;
 };
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
@@ -84,22 +82,25 @@ static void* http_worker(void* arg) {
     while (atomic_load_explicit(&server->stopped, memory_order_acquire) == 0) {
         struct http_req* req = http_server_pop_req(server);
         if (req != 0) {
-            serve_static_file(server->static_files, req);
+            if (on_http_req_callback(server->cb_data, req) < 0) {
+                // Nothing special to do about errors so far.
+                // TODO: After the http server becomes async, only delete the http request here.
+            }
             delete_http_req(server, req);
         }
     }
     return 0;
 }
 
-struct http_server* new_http_server(struct static_file_server* static_files, int req_buf_cap, int num_workers) {
+struct http_server* new_http_server(int req_buf_cap, int num_workers, void* cb_data) {
     struct http_server* server = malloc(sizeof(struct http_server));
     if (server == 0) {
         return 0;
     }
-    server->req_buf_cap = req_buf_cap;
-    server->static_files = static_files;
     server->head = 0;
     server->tail = 0;
+    server->req_buf_cap = req_buf_cap;
+    server->cb_data = cb_data;
     int err = pthread_mutex_init(&server->lock, 0);
     if (err != 0) {
         LOG_FATAL("pthread_mutex_init() failed with error=%d", err);

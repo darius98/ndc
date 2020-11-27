@@ -89,7 +89,7 @@ struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
 }
 
 struct tcp_server* init_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
-                                   void* user_data) {
+                                   void* cb_data) {
     struct tcp_server* server = malloc(sizeof(struct tcp_server));
     if (server == 0) {
         LOG_ERROR("Failed to allocate memory for tcp server structure");
@@ -136,7 +136,7 @@ struct tcp_server* init_tcp_server(int port, int max_clients, int n_buckets, int
     server->listen_fd = listen_fd;
     server->port = port;
     server->conn_buf_len = conn_buf_len;
-    server->user_data = user_data;
+    server->cb_data = cb_data;
     return server;
 }
 
@@ -189,7 +189,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         free(conn);
         return 0;
     }
-    if (tcp_conn_after_open_callback(server->user_data, conn) < 0) {
+    if (tcp_conn_after_open_callback(server->cb_data, conn) < 0) {
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
                       port, errno, strerror(errno));
@@ -215,7 +215,7 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     LOG_DEBUG("Received %d bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf_len += num_bytes;
     conn->buf[conn->buf_len] = 0;
-    if (tcp_conn_on_recv_callback(server->user_data, conn) < 0) {
+    if (tcp_conn_on_recv_callback(server->cb_data, conn) < 0) {
         close_tcp_conn(server, conn);
     } else if (conn->buf_len == conn->buf_cap) {
         LOG_ERROR("Buffer full for connection %s:%d (fd=%d), will close connection", ipv4_str(conn->ipv4), conn->port,
@@ -226,7 +226,7 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
 }
 
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
-    if (tcp_conn_before_close_callback(server->user_data, conn) < 0) {
+    if (tcp_conn_before_close_callback(server->cb_data, conn) < 0) {
         // If the client fails to close the connection on their part,
         // leak the connection rather than break the application.
         return;

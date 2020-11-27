@@ -3,8 +3,6 @@
 
 #include "tcp_server.h"
 
-struct static_file_server;
-
 struct http_req {
     /// The underlying TCP connection.
     struct tcp_conn* conn;
@@ -46,6 +44,8 @@ struct http_server;
 
 /// Allocate and initialize a http server.
 /// Note: returns 0 on allocation failure.
-struct http_server* new_http_server(struct static_file_server* static_files, int req_buf_cap, int num_workers);
+struct http_server* new_http_server(int req_buf_cap, int num_workers, void* cb_data);
+
+int on_http_req_callback(void* cb_data, struct http_req* req);
 
 #endif
