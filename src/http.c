@@ -176,11 +176,9 @@ static char* find_next_clrf(char* s) {
     return strstr(s, "\r\n");
 }
 
-int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
-    struct http_server* server = cb_data;
+static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
     char* buf = conn->buf;
-    char* initial_buf = conn->buf;
-    int bytes_read;
+    char* initial_buf = buf;
     while (1) {
         struct http_req* req = conn->user_data;
         if (req == 0) {
@@ -194,7 +192,7 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
         if (req->method == 0) {
             char* end = find_next_space(buf);
             if (end == 0) {
-                goto done_parsing;
+                return buf - initial_buf;
             }
             char* method = append_to_http_req(req, buf, end);
             if (method == 0) {
@@ -206,7 +204,7 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
         if (req->path == 0) {
             char* end = find_next_space(buf);
             if (end == 0) {
-                goto done_parsing;
+                return buf - initial_buf;
             }
             char* path = append_to_http_req(req, buf, end);
             if (path == 0) {
@@ -218,7 +216,7 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
         if (req->version == 0) {
             char* end = find_next_clrf(buf);
             if (end == 0) {
-                goto done_parsing;
+                return buf - initial_buf;
             }
             char* version = append_to_http_req(req, buf, end);
             if (version == 0) {
@@ -231,7 +229,7 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
         while (1) {
             char* end = find_next_clrf(buf);
             if (end == 0) {
-                goto done_parsing;
+                return buf - initial_buf;
             }
             if (end == buf) {
                 // headers are done.
@@ -252,9 +250,10 @@ int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
         http_server_push_req(server, req);
         conn->user_data = 0;
     }
+}
 
-done_parsing:
-    bytes_read = buf - initial_buf;
+int tcp_conn_recv_callback(void* cb_data, struct tcp_conn* conn) {
+    int bytes_read = read_http_reqs((struct http_server*)cb_data, conn);
     if (bytes_read != conn->buf_len) {
         memmove(conn->buf, conn->buf + bytes_read, conn->buf_len - bytes_read);
     }
