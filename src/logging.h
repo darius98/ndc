@@ -3,7 +3,7 @@
 
 void init_logging(int log_filename_and_lineno, int min_level);
 
-extern int internal_log_min_level;
+int internal_log_min_level();
 
 void internal_log_lock();
 
@@ -24,14 +24,14 @@ const char* ipv4_str(int ipv4);
 // By default, log messages do not contain file name and line number.
 #ifdef NDC_LOG_FILE_AND_LINE
 #define INTERNAL_LOG_(level, ...)                                     \
-    if (internal_log_min_level <= level) {                            \
+    if (internal_log_min_level() <= level) {                          \
         internal_log_lock();                                          \
         internal_log_message(__FILE__, __LINE__, level, __VA_ARGS__); \
         internal_log_unlock();                                        \
     }
 #else
 #define INTERNAL_LOG_(level, ...)                       \
-    if (internal_log_min_level <= level) {              \
+    if (internal_log_min_level() <= level) {            \
         internal_log_lock();                            \
         internal_log_message(0, 0, level, __VA_ARGS__); \
         internal_log_unlock();                          \
