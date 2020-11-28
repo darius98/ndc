@@ -46,6 +46,10 @@ struct http_server;
 /// Note: Aborts on failure.
 struct http_server* new_http_server(int req_buf_cap, int num_workers, void* cb_data);
 
-int on_http_req_callback(void* cb_data, struct http_req* req);
+void delete_http_req(struct http_req* req);
+
+// These callbacks are not implemented in the HTTP server.
+
+void on_http_req_callback(void* cb_data, struct http_req* req);
 
 #endif

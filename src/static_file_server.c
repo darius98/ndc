@@ -7,8 +7,8 @@
 #include <unistd.h>
 
 #include "http_server.h"
-#include "tcp_server.h"
 #include "logging.h"
+#include "tcp_server.h"
 
 // TODO: Rewrite everything.
 
@@ -76,14 +76,13 @@ static int sync_write_file(int fd, FILE* file) {
     }
 }
 
-int on_http_req_callback(void* cb_data, struct http_req* req) {
-    struct static_file_server* server = cb_data;
+static void serve_static_file(struct static_file_server* server, struct http_req* req) {
     int req_path_len = strlen(req->path);
     char* path = malloc(server->base_dir_len + req_path_len + 1);
     if (path == 0) {
         LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
                   req->conn->port, req->method, req->path);
-        return -1;
+        return;
     }
     path[0] = 0;
     strcat(path, server->base_dir);
@@ -98,7 +97,7 @@ int on_http_req_callback(void* cb_data, struct http_req* req) {
             LOG_INFO("%s %s %s 404 Not found", ipv4_str(req->conn->ipv4), req->method, req->path);
         }
         free(path);
-        return -1;
+        return;
     }
     int path_len = server->base_dir_len + req_path_len - skip_first_slash;
     const char* content_type_hdr_value = "application/octet-stream";
@@ -124,14 +123,14 @@ int on_http_req_callback(void* cb_data, struct http_req* req) {
         LOG_ERROR("snprintf failed error=%d", response_hdr_len);
         free(path);
         fclose(file);
-        return -1;
+        return;
     }
     if (sync_write(req->conn->fd, response_hdr, response_hdr_len) < 0) {
         LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
                   req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port, errno, strerror(errno));
         free(path);
         fclose(file);
-        return -1;
+        return;
     }
     int err = sync_write_file(req->conn->fd, file) < 0;
     if (err < 0) {
@@ -143,5 +142,9 @@ int on_http_req_callback(void* cb_data, struct http_req* req) {
     }
     free(path);
     fclose(file);
-    return 0;
+}
+
+void on_http_req_callback(void* cb_data, struct http_req* req) {
+    serve_static_file((struct static_file_server*)cb_data, req);
+    delete_http_req(req);
 }

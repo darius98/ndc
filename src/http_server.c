@@ -53,22 +53,12 @@ static struct http_req* http_server_pop_req(struct http_server* server) {
     return req;
 }
 
-static void delete_http_req(struct http_server* server, struct http_req* req) {
-    tcp_conn_dec_refcount(req->conn);
-    free(req->buf);
-    free(req);
-}
-
 static void* http_worker(void* arg) {
     struct http_server* server = (struct http_server*)arg;
     while (atomic_load_explicit(&server->stopped, memory_order_acquire) == 0) {
         struct http_req* req = http_server_pop_req(server);
         if (req != 0) {
-            if (on_http_req_callback(server->cb_data, req) < 0) {
-                // Nothing special to do about errors so far.
-                // TODO: After the http server becomes async, only delete the http request here.
-            }
-            delete_http_req(server, req);
+            on_http_req_callback(server->cb_data, req);
         }
     }
     return 0;
@@ -104,6 +94,12 @@ struct http_server* new_http_server(int req_buf_cap, int num_workers, void* cb_d
         }
     }
     return server;
+}
+
+void delete_http_req(struct http_req* req) {
+    tcp_conn_dec_refcount(req->conn);
+    free(req->buf);
+    free(req);
 }
 
 static struct http_req* new_http_req(struct http_server* server, struct tcp_conn* conn) {
@@ -255,7 +251,7 @@ int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn) {
 
 int tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
     if (conn->user_data != 0) {
-        delete_http_req((struct http_server*)cb_data, (struct http_req*)conn->user_data);
+        delete_http_req((struct http_req*)conn->user_data);
         conn->user_data = 0;
     }
     return 0;
