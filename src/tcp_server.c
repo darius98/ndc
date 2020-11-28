@@ -90,25 +90,21 @@ struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
     return 0;
 }
 
-struct tcp_server* init_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
+struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
                                    void* cb_data) {
     struct tcp_server* server = malloc(sizeof(struct tcp_server));
     if (server == 0) {
-        LOG_ERROR("Failed to allocate memory for tcp server structure");
-        return 0;
+        LOG_FATAL("Failed to allocate memory for tcp server structure");
     }
 
     struct tcp_conn_table* conn_table = new_tcp_conn_table(n_buckets, bucket_init_cap);
     if (conn_table == 0) {
-        LOG_ERROR("Failed to allocate memory for tcp server connections table structure");
-        return 0;
+        LOG_FATAL("Failed to allocate memory for tcp server connections table structure");
     }
 
     int listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listen_fd < 0) {
-        LOG_ERROR("socket() failed errno=%d (%s)", errno, strerror(errno));
-        free(server);
-        return 0;
+        LOG_FATAL("socket() failed errno=%d (%s)", errno, strerror(errno));
     }
 
     struct sockaddr_in server_addr;
@@ -117,21 +113,11 @@ struct tcp_server* init_tcp_server(int port, int max_clients, int n_buckets, int
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(port);
     if (bind(listen_fd, (const struct sockaddr*)&server_addr, sizeof(struct sockaddr_in)) < 0) {
-        LOG_ERROR("bind() failed errno=%d (%s)", errno, strerror(errno));
-        if (close(listen_fd) < 0) {
-            LOG_ERROR("close() failed errno=%d (%s)", errno, strerror(errno));
-        }
-        free(server);
-        return 0;
+        LOG_FATAL("bind() failed errno=%d (%s)", errno, strerror(errno));
     }
 
     if (listen(listen_fd, max_clients) < 0) {
-        LOG_ERROR("listen() failed errno=%d (%s)", errno, strerror(errno));
-        if (close(listen_fd) < 0) {
-            LOG_ERROR("close() failed errno=%d (%s)", errno, strerror(errno));
-        }
-        free(server);
-        return 0;
+        LOG_FATAL("listen() failed errno=%d (%s)", errno, strerror(errno));
     }
 
     server->conn_table = conn_table;

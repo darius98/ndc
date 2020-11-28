@@ -43,7 +43,7 @@ struct http_req {
 struct http_server;
 
 /// Allocate and initialize a http server.
-/// Note: returns 0 on allocation failure.
+/// Note: Aborts on failure.
 struct http_server* new_http_server(int req_buf_cap, int num_workers, void* cb_data);
 
 int on_http_req_callback(void* cb_data, struct http_req* req);

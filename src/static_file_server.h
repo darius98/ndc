@@ -6,6 +6,8 @@ struct static_file_server {
     char* base_dir;
 };
 
+/// Allocate and initialize a static file server.
+/// Note: Aborts on failure.
 struct static_file_server* new_static_file_server(const char* base_dir);
 
 #endif

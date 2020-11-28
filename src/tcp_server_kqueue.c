@@ -9,18 +9,13 @@
 void run_tcp_server_loop(struct tcp_server *server) {
     int kqueue_fd = kqueue();
     if (kqueue_fd < 0) {
-        LOG_ERROR("Failed to start TCP server: kqueue() failed errno=%d (%s)", errno, strerror(errno));
-        return;
+        LOG_FATAL("Failed to start TCP server: kqueue() failed errno=%d (%s)", errno, strerror(errno));
     }
 
     struct kevent event;
     EV_SET(&event, server->listen_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
-        LOG_ERROR("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, strerror(errno));
-        if (close(kqueue_fd) < 0) {
-            LOG_ERROR("Failed to close kqueue file: close() failed errno=%d (%s)", errno, strerror(errno));
-        }
-        return;
+        LOG_FATAL("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, strerror(errno));
     }
 
     LOG_INFO("Running HTTP server on port %d", server->port);

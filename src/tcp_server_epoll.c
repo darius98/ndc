@@ -9,19 +9,14 @@
 void run_tcp_server_loop(struct tcp_server *server) {
     int epoll_fd = epoll_create1(0);
     if (epoll_fd < 0) {
-        LOG_ERROR("Failed to start server: epoll_create1() failed errno=%d (%s)", errno, strerror(errno));
-        return;
+        LOG_FATAL("Failed to start server: epoll_create1() failed errno=%d (%s)", errno, strerror(errno));
     }
 
     struct epoll_event event;
     event.events = EPOLLIN;
     event.data.fd = server->listen_fd;
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server->listen_fd, &event) < 0 && errno != EINTR) {
-        LOG_ERROR("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, strerror(errno));
-        if (close(epoll_fd) < 0) {
-            LOG_ERROR("Failed to close epoll file: close() failed errno=%d (%s)", errno, strerror(errno));
-        }
-        return;
+        LOG_FATAL("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, strerror(errno));
     }
 
     LOG_INFO("Running HTTP server on port %d", server->port);

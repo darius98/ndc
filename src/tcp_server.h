@@ -24,8 +24,10 @@ struct tcp_server {
     void* cb_data;
 };
 
-struct tcp_server* init_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
-                                   void* cb_data);
+/// Allocate and initialize a TCP server.
+/// Note: Aborts on failure.
+struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
+                                  void* cb_data);
 
 struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 
