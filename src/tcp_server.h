@@ -1,6 +1,8 @@
 #ifndef NDC_TCP_SERVER_H_
 #define NDC_TCP_SERVER_H_
 
+struct write_queue;
+
 struct tcp_conn {
     _Atomic(int) ref_count;
     int fd;
@@ -12,22 +14,18 @@ struct tcp_conn {
     int port;
 };
 
-struct tcp_conn_table;
-
-struct tcp_server {
-    struct tcp_conn_table* conn_table;
-    int listen_fd;
-    int port;
-
-    int conn_buf_len;
-
-    void* cb_data;
-};
+struct tcp_server;
 
 /// Allocate and initialize a TCP server.
 /// Note: Aborts on failure.
 struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
                                   void* cb_data);
+
+int tcp_server_get_fd(struct tcp_server* server);
+
+int tcp_server_get_port(struct tcp_server* server);
+
+struct write_queue* get_write_queue(struct tcp_server* server);
 
 struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 

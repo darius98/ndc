@@ -13,12 +13,12 @@ void run_tcp_server_loop(struct tcp_server *server) {
     }
 
     struct kevent event;
-    EV_SET(&event, server->listen_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
+    EV_SET(&event, tcp_server_get_fd(server), EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
         LOG_FATAL("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, strerror(errno));
     }
 
-    LOG_INFO("Running HTTP server on port %d", server->port);
+    LOG_INFO("Running HTTP server on port %d", tcp_server_get_port(server));
 
     struct tcp_conn *conn;
     while (1) {
@@ -37,8 +37,8 @@ void run_tcp_server_loop(struct tcp_server *server) {
             LOG_ERROR("Server: kevent() returned %d events when capacity was 1.", n_ev);
         }
         int event_fd = (int)event.ident;
-        if (event_fd == server->listen_fd) {
-            LOG_DEBUG("Received kevent on TCP server socket (fd=%d)", server->listen_fd);
+        if (event_fd == tcp_server_get_fd(server)) {
+            LOG_DEBUG("Received kevent on TCP server socket (fd=%d)", tcp_server_get_fd(server));
             conn = accept_tcp_conn(server);
             if (conn != 0) {
                 EV_SET(&event, conn->fd, EVFILT_READ, EV_ADD, 0, 0, 0);

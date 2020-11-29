@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "logging.h"
+#include "write_queue.h"
 
 struct tcp_conn_table_bucket {
     int size;
@@ -19,6 +20,17 @@ struct tcp_conn_table {
     int size;
     int n_buckets;
     struct tcp_conn_table_bucket* buckets;
+};
+
+struct tcp_server {
+    struct tcp_conn_table* conn_table;
+    struct write_queue* w_queue;
+    int listen_fd;
+    int port;
+
+    int conn_buf_len;
+
+    void* cb_data;
 };
 
 static struct tcp_conn_table* new_tcp_conn_table(int n_buckets, int bucket_init_cap) {
@@ -91,7 +103,7 @@ struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
 }
 
 struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
-                                   void* cb_data) {
+                                  void* cb_data) {
     struct tcp_server* server = malloc(sizeof(struct tcp_server));
     if (server == 0) {
         LOG_FATAL("Failed to allocate memory for tcp server structure");
@@ -100,6 +112,11 @@ struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int 
     struct tcp_conn_table* conn_table = new_tcp_conn_table(n_buckets, bucket_init_cap);
     if (conn_table == 0) {
         LOG_FATAL("Failed to allocate memory for tcp server connections table structure");
+    }
+
+    struct write_queue* w_queue = new_write_queue();
+    if (w_queue == 0) {
+        LOG_FATAL("Failed to allocate memory for write queue structure");
     }
 
     int listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -121,11 +138,24 @@ struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int 
     }
 
     server->conn_table = conn_table;
+    server->w_queue = w_queue;
     server->listen_fd = listen_fd;
     server->port = port;
     server->conn_buf_len = conn_buf_len;
     server->cb_data = cb_data;
     return server;
+}
+
+int tcp_server_get_fd(struct tcp_server* server) {
+    return server->listen_fd;
+}
+
+int tcp_server_get_port(struct tcp_server* server) {
+    return server->port;
+}
+
+struct write_queue* get_write_queue(struct tcp_server* server) {
+    return server->w_queue;
 }
 
 struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {

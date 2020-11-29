@@ -4,19 +4,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "file_cache.h"
 #include "http_server.h"
 #include "logging.h"
 #include "tcp_server.h"
-
-// TODO: Rewrite everything.
+#include "write_queue.h"
 
 struct static_file_server {
     struct file_cache* cache;
     int base_dir_len;
     char* base_dir;
+
+    struct write_queue* write_queue;
 };
 
 static const char* http_404_response =
@@ -60,6 +60,10 @@ struct static_file_server* new_static_file_server(const char* base_dir, int fcac
     return server;
 }
 
+void static_file_server_set_write_queue(struct static_file_server* server, struct write_queue* queue) {
+    server->write_queue = queue;
+}
+
 static struct mapped_file* find_file(struct static_file_server* server, struct http_req* req) {
     char* path = malloc(server->base_dir_len + strlen(req->path) + 1);
     if (path == 0) {
@@ -72,29 +76,58 @@ static struct mapped_file* find_file(struct static_file_server* server, struct h
     return open_file(server->cache, path);
 }
 
-static int sync_write(int fd, const char* buf, int buf_len) {
-    int written_sz = 0;
-    while (written_sz < buf_len) {
-        ssize_t chunk_sz = write(fd, buf + written_sz, buf_len - written_sz);
-        if (chunk_sz < 0) {
-            return chunk_sz;
-        }
-        written_sz += chunk_sz;
+static void http_404_write_cb(void* data, struct tcp_conn* conn, int err) {
+    struct http_req* req = (struct http_req*)data;
+    if (err != 0) {
+        LOG_ERROR("Failed to write 404 Not found response to request %s %s from connection %s:%d errno=%d (%s)",
+                  req->method, req->path, ipv4_str(conn->ipv4), conn->port, err, strerror(err));
+    } else {
+        LOG_INFO("%s %s %s 404 Not found", ipv4_str(conn->ipv4), req->method, req->path);
     }
-    return written_sz;
+    delete_http_req(req);
+}
+
+struct http_200_cb_data {
+    struct http_req* req;
+    struct static_file_server* server;
+    struct mapped_file* file;
+
+    int res_hdrs_len;
+    char res_hdrs[200];
+};
+
+static void http_200_response_headers_cb(void* data, struct tcp_conn* conn, int err) {
+    struct http_200_cb_data* cb_data = (struct http_200_cb_data*)data;
+    if (err != 0) {
+        LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
+                  cb_data->req->method, cb_data->req->path, ipv4_str(conn->ipv4), conn->port, err, strerror(err));
+        close_file(cb_data->server->cache, cb_data->file);
+        delete_http_req(cb_data->req);
+        free(cb_data);
+    }
+}
+
+static void http_200_response_body_cb(void* data, struct tcp_conn* conn, int err) {
+    struct http_200_cb_data* cb_data = (struct http_200_cb_data*)data;
+    if (err != 0) {
+        LOG_ERROR("Failed to write file response to request %s %s from connection %s:%d errno=%d (%s)",
+                  cb_data->req->method, cb_data->req->path, ipv4_str(conn->ipv4), conn->port, errno, strerror(errno));
+    } else {
+        LOG_INFO("%s %s %s 200 OK", ipv4_str(conn->ipv4), cb_data->req->method, cb_data->req->path);
+    }
+    close_file(cb_data->server->cache, cb_data->file);
+    delete_http_req(cb_data->req);
+    free(cb_data);
 }
 
 static void serve_static_file(struct static_file_server* server, struct http_req* req) {
     struct mapped_file* file = find_file(server, req);
     if (file == 0) {
-        if (sync_write(req->conn->fd, http_404_response, http_404_response_len) < 0) {
-            LOG_ERROR("Failed to write 404 Not found response to request %s %s from connection %s:%d errno=%d (%s)",
-                      req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port, errno, strerror(errno));
-        } else {
-            LOG_INFO("%s %s %s 404 Not found", ipv4_str(req->conn->ipv4), req->method, req->path);
-        }
+        write_queue_push(server->write_queue, req->conn, http_404_response, http_404_response_len, req,
+                         http_404_write_cb);
         return;
     }
+
     const char* content_type_hdr_value = "application/octet-stream";
     for (int i = 0; i < NUM_KNOWN_EXTENSIONS; i++) {
         if (file->path_len >= known_extensions[i].ext_len &&
@@ -103,35 +136,39 @@ static void serve_static_file(struct static_file_server* server, struct http_req
             break;
         }
     }
-    char response_hdr[200];
-    int response_hdr_len = snprintf(response_hdr, 200,
+
+    struct http_200_cb_data* cb_data = malloc(sizeof(struct http_200_cb_data));
+    if (cb_data == 0) {
+        LOG_ERROR("Failed to allocate callback data for writing response to request %s %s from connection %s:%d",
+                  req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port);
+        close_file(server->cache, file);
+        delete_http_req(req);
+        return;
+    }
+    cb_data->req = req;
+    cb_data->server = server;
+    cb_data->file = file;
+    cb_data->res_hdrs_len = snprintf(cb_data->res_hdrs, 200,
                                     "HTTP/1.1 200 OK\r\n"
                                     "Server: NDC/1.0.0\r\n"
                                     "Content-Type: %s\r\n"
                                     "Content-Length: %d\r\n"
                                     "\r\n",
                                     content_type_hdr_value, file->content_len);
-    if (response_hdr_len < 0) {
-        LOG_ERROR("snprintf failed error=%d", response_hdr_len);
+    if (cb_data->res_hdrs_len < 0) {
+        LOG_ERROR("Failed to format response headers of request %s %s from connection %s:%d: snprintf returned %d",
+                  req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port, cb_data->res_hdrs_len);
+        free(cb_data);
         close_file(server->cache, file);
+        delete_http_req(req);
         return;
     }
-    if (sync_write(req->conn->fd, response_hdr, response_hdr_len) < 0) {
-        LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
-                  req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port, errno, strerror(errno));
-        close_file(server->cache, file);
-        return;
-    }
-    if (sync_write(req->conn->fd, file->content, file->content_len) < 0) {
-        LOG_ERROR("Failed to write file response to request %s %s from connection %s:%d errno=%d (%s)", req->method,
-                  req->path, ipv4_str(req->conn->ipv4), req->conn->port, errno, strerror(errno));
-    } else {
-        LOG_INFO("%s %s %s 200 OK", ipv4_str(req->conn->ipv4), req->method, req->path);
-    }
-    close_file(server->cache, file);
+    write_queue_push(server->write_queue, req->conn, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data,
+                     http_200_response_headers_cb);
+    write_queue_push(server->write_queue, req->conn, file->content, file->content_len, cb_data,
+                     http_200_response_body_cb);
 }
 
 void on_http_req_callback(void* cb_data, struct http_req* req) {
     serve_static_file((struct static_file_server*)cb_data, req);
-    delete_http_req(req);
 }

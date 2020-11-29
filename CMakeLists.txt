@@ -16,7 +16,8 @@ set(ndc_sources
         src/logging.c
         src/main.c
         src/static_file_server.c
-        src/tcp_server.c)
+        src/tcp_server.c
+        src/write_queue.c)
 if (USE_KQUEUE)
     message(STATUS "Using kqueue for tcp loop")
     list(APPEND ndc_sources src/tcp_server_kqueue.c)

@@ -25,6 +25,7 @@ struct http_server {
 };
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
+    LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port);
     ASSERT_0(pthread_mutex_lock(&server->lock));
     req->next = 0;
     if (server->tail != 0) {
@@ -39,15 +40,20 @@ static void http_server_push_req(struct http_server* server, struct http_req* re
 }
 
 static struct http_req* http_server_pop_req(struct http_server* server) {
+    struct http_req* req;
     ASSERT_0(pthread_mutex_lock(&server->lock));
-    ASSERT_0(pthread_cond_wait(&server->cond_var, &server->lock));
-    struct http_req* req = server->head;
-    if (req != 0) {
-        server->head = req->next;
-        if (server->head == 0) {
-            server->tail = 0;
+    while (1) {
+        req = server->head;
+        if (req == 0) {
+            ASSERT_0(pthread_cond_wait(&server->cond_var, &server->lock));
+        } else {
+            server->head = req->next;
+            if (server->head == 0) {
+                server->tail = 0;
+            }
+            req->next = 0;
+            break;
         }
-        req->next = 0;
     }
     ASSERT_0(pthread_mutex_unlock(&server->lock));
     return req;
@@ -57,9 +63,8 @@ static void* http_worker(void* arg) {
     struct http_server* server = (struct http_server*)arg;
     while (atomic_load_explicit(&server->stopped, memory_order_acquire) == 0) {
         struct http_req* req = http_server_pop_req(server);
-        if (req != 0) {
-            on_http_req_callback(server->cb_data, req);
-        }
+        LOG_DEBUG("Processing HTTP request %s %s from %s:%d", req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port);
+        on_http_req_callback(server->cb_data, req);
     }
     return 0;
 }
