@@ -48,6 +48,9 @@ struct static_file_server* new_static_file_server(const char* base_dir, int fcac
         LOG_FATAL("Failed to allocate memory for static file server");
     }
     server->cache = new_file_cache(fcache_n_buckets, fcache_bucket_init_cap);
+    if (server->cache == 0) {
+        LOG_FATAL("Failed to allocate memory for file cache");
+    }
     server->base_dir_len = strlen(base_dir);
     server->base_dir = malloc(server->base_dir_len + 1);
     if (server->base_dir == 0) {
@@ -55,6 +58,18 @@ struct static_file_server* new_static_file_server(const char* base_dir, int fcac
     }
     strcpy(server->base_dir, base_dir);
     return server;
+}
+
+static struct mapped_file* find_file(struct static_file_server* server, struct http_req* req) {
+    char* path = malloc(server->base_dir_len + strlen(req->path) + 1);
+    if (path == 0) {
+        LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
+                  req->conn->port, req->method, req->path);
+        return 0;
+    }
+    strcpy(path, server->base_dir);
+    strcat(path, req->path + (path[server->base_dir_len - 1] == '/' && req->path[0] == '/' ? 1 : 0));
+    return open_file(server->cache, path);
 }
 
 static int sync_write(int fd, const char* buf, int buf_len) {
@@ -70,17 +85,7 @@ static int sync_write(int fd, const char* buf, int buf_len) {
 }
 
 static void serve_static_file(struct static_file_server* server, struct http_req* req) {
-    int req_path_len = strlen(req->path);
-    char* path = malloc(server->base_dir_len + req_path_len + 1);
-    if (path == 0) {
-        LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
-                  req->conn->port, req->method, req->path);
-        return;
-    }
-    strcpy(path, server->base_dir);
-    int skip_first_slash = path[server->base_dir_len - 1] == '/' && req->path[0] == '/' ? 1 : 0;
-    strcat(path, req->path + skip_first_slash);
-    struct mapped_file* file = open_file(server->cache, path);
+    struct mapped_file* file = find_file(server, req);
     if (file == 0) {
         if (sync_write(req->conn->fd, http_404_response, http_404_response_len) < 0) {
             LOG_ERROR("Failed to write 404 Not found response to request %s %s from connection %s:%d errno=%d (%s)",
@@ -90,11 +95,10 @@ static void serve_static_file(struct static_file_server* server, struct http_req
         }
         return;
     }
-    int path_len = server->base_dir_len + req_path_len - skip_first_slash;
     const char* content_type_hdr_value = "application/octet-stream";
     for (int i = 0; i < NUM_KNOWN_EXTENSIONS; i++) {
-        if (path_len >= known_extensions[i].ext_len &&
-            strcmp(path + (path_len - known_extensions[i].ext_len), known_extensions[i].ext) == 0) {
+        if (file->path_len >= known_extensions[i].ext_len &&
+            strcmp(file->path + (file->path_len - known_extensions[i].ext_len), known_extensions[i].ext) == 0) {
             content_type_hdr_value = known_extensions[i].content_type;
             break;
         }
