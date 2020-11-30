@@ -172,6 +172,7 @@ struct mapped_file* open_file(struct file_cache* cache, char* path) {
         }
         if (file_cache_insert(cache, file) < 0) {
             unmap_file(file);
+            ASSERT_0(pthread_mutex_unlock(&cache->lock));
             return 0;
         }
     } else {

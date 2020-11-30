@@ -1,5 +1,6 @@
 #include "http_server.h"
 
+#include <ctype.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -138,6 +139,31 @@ static struct http_req* new_http_req(struct http_server* server, struct tcp_conn
     return req;
 }
 
+static int safe_parse_unsigned_int(char* start, char* end) {
+    // Skip any whitespace
+    while (start != end && isspace(*start)) {
+        ++start;
+    }
+    if (start == end) {
+        return -1;
+    }
+    int n = 0;
+    while (start != end && isdigit(*start)) {
+        n = n * 10 + *start - '0';
+        ++start;
+    }
+    if (start != end) {
+        return -1;
+    }
+    return n;
+}
+
+static void try_parse_content_length_header(struct http_req* req, char* start, char* end) {
+    if (end - start >= 16 && strncasecmp("Content-Length:", start, 15) == 0) {
+        req->body_len = safe_parse_unsigned_int(start + 15, end);
+    }
+}
+
 static char* append_to_http_req(struct http_req* req, char* start, char* end) {
     int len = end - start;
     if (len + 1 > req->buf_cap - req->buf_len) {
@@ -214,15 +240,33 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
                 buf = end + 2;
                 break;
             }
-            // TODO: Parse Content-Length and other significant headers.
             if (append_to_http_req(req, buf, end) == 0) {
                 return -1;
             }
+            try_parse_content_length_header(req, buf, end);
             buf = end + 2;
             req->body = req->buf + req->buf_len;
         }
         if (req->body_len != -1) {
-            // TODO: We still need to receive the request body.
+            int body_offset = req->body - req->buf;
+            int body_len_read = req->buf_len - body_offset;
+            int body_len_left = req->body_len - body_len_read;
+            if (body_len_left >= 0) {
+                // We still have to receive (at least part of) the request body.
+                if (body_len_left >= req->buf_cap - req->buf_len) {
+                    // We can't fit this request into the buffer.
+                    return -1;
+                }
+                int recv_bytes_read = buf - initial_buf;
+                int recv_bytes_left = conn->buf_len - recv_bytes_read;
+                int body_bytes_recv = recv_bytes_left < body_len_left ? recv_bytes_left : body_len_left;
+                memcpy(req->buf + req->buf_len, buf, body_bytes_recv);
+                req->buf_len += body_bytes_recv;
+                buf += body_bytes_recv;
+                if (body_bytes_recv < body_len_left) {
+                    return buf - initial_buf;
+                }
+            }
         }
         // The request is fully parsed. Add it to the queue.
         http_server_push_req(server, req);
@@ -247,6 +291,9 @@ int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn) {
 
 int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn) {
     int bytes_read = read_http_reqs((struct http_server*)cb_data, conn);
+    if (bytes_read < 0) {
+        return bytes_read;
+    }
     if (bytes_read != conn->buf_len) {
         memmove(conn->buf, conn->buf + bytes_read, conn->buf_len - bytes_read);
     }
