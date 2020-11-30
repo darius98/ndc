@@ -301,10 +301,9 @@ int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn) {
     return bytes_read;
 }
 
-int tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
+void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
     if (conn->user_data != 0) {
         delete_http_req((struct http_req*)conn->user_data);
         conn->user_data = 0;
     }
-    return 0;
 }

@@ -12,6 +12,7 @@ struct tcp_conn {
     void* user_data;
     int ipv4;
     int port;
+    int is_closed;
 };
 
 struct tcp_server;
@@ -47,6 +48,6 @@ int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn);
 
 int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn);
 
-int tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn);
+void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn);
 
 #endif

@@ -8,7 +8,7 @@ int main() {
     struct static_file_server* static_file_server = new_static_file_server("./", 23, 4);
     struct http_server* http_server = new_http_server(65536, 1, static_file_server);
     struct tcp_server* tcp_server = new_tcp_server(1337, 2048, 23, 4, 65536, http_server);
-    static_file_server_set_write_queue(static_file_server, get_write_queue(tcp_server));
+    static_file_server_set_tcp_server(static_file_server, tcp_server);
     run_tcp_server_loop(tcp_server);
     return 0;
 }

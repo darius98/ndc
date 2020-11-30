@@ -17,6 +17,7 @@ struct static_file_server {
     char* base_dir;
 
     struct write_queue* write_queue;
+    struct tcp_server* tcp_server;
 };
 
 static const char* http_404_response =
@@ -60,20 +61,9 @@ struct static_file_server* new_static_file_server(const char* base_dir, int fcac
     return server;
 }
 
-void static_file_server_set_write_queue(struct static_file_server* server, struct write_queue* queue) {
-    server->write_queue = queue;
-}
-
-static struct mapped_file* find_file(struct static_file_server* server, struct http_req* req) {
-    char* path = malloc(server->base_dir_len + strlen(req->path) + 1);
-    if (path == 0) {
-        LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
-                  req->conn->port, req->method, req->path);
-        return 0;
-    }
-    strcpy(path, server->base_dir);
-    strcat(path, req->path + (path[server->base_dir_len - 1] == '/' && req->path[0] == '/' ? 1 : 0));
-    return open_file(server->cache, path);
+void static_file_server_set_tcp_server(struct static_file_server* server, struct tcp_server* tcp_server) {
+    server->tcp_server = tcp_server;
+    server->write_queue = get_write_queue(tcp_server);
 }
 
 static void http_404_write_cb(void* data, struct tcp_conn* conn, int err) {
@@ -101,9 +91,6 @@ static void http_200_response_headers_cb(void* data, struct tcp_conn* conn, int 
     if (err != 0) {
         LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
                   cb_data->req->method, cb_data->req->path, ipv4_str(conn->ipv4), conn->port, err, strerror(err));
-        close_file(cb_data->server->cache, cb_data->file);
-        delete_http_req(cb_data->req);
-        free(cb_data);
     }
 }
 
@@ -121,7 +108,19 @@ static void http_200_response_body_cb(void* data, struct tcp_conn* conn, int err
 }
 
 static void serve_static_file(struct static_file_server* server, struct http_req* req) {
-    struct mapped_file* file = find_file(server, req);
+    char* path = malloc(server->base_dir_len + strlen(req->path) + 1);
+    if (path == 0) {
+        LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
+                  req->conn->port, req->method, req->path);
+        close_tcp_conn(server->tcp_server, req->conn);
+        delete_http_req(req);
+        return;
+    }
+
+    strcpy(path, server->base_dir);
+    strcat(path, req->path + (path[server->base_dir_len - 1] == '/' && req->path[0] == '/' ? 1 : 0));
+
+    struct mapped_file* file = open_file(server->cache, path);
     if (file == 0) {
         write_queue_push(server->write_queue, req->conn, http_404_response, http_404_response_len, req,
                          http_404_write_cb);
@@ -149,17 +148,18 @@ static void serve_static_file(struct static_file_server* server, struct http_req
     cb_data->server = server;
     cb_data->file = file;
     cb_data->res_hdrs_len = snprintf(cb_data->res_hdrs, 200,
-                                    "HTTP/1.1 200 OK\r\n"
-                                    "Server: NDC/1.0.0\r\n"
-                                    "Content-Type: %s\r\n"
-                                    "Content-Length: %d\r\n"
-                                    "\r\n",
-                                    content_type_hdr_value, file->content_len);
+                                     "HTTP/1.1 200 OK\r\n"
+                                     "Server: NDC/1.0.0\r\n"
+                                     "Content-Type: %s\r\n"
+                                     "Content-Length: %d\r\n"
+                                     "\r\n",
+                                     content_type_hdr_value, file->content_len);
     if (cb_data->res_hdrs_len < 0) {
         LOG_ERROR("Failed to format response headers of request %s %s from connection %s:%d: snprintf returned %d",
                   req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port, cb_data->res_hdrs_len);
         free(cb_data);
         close_file(server->cache, file);
+        close_tcp_conn(server->tcp_server, req->conn);
         delete_http_req(req);
         return;
     }

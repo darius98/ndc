@@ -21,15 +21,13 @@ struct write_task {
 };
 
 struct write_queue {
+    struct tcp_server* tcp_server;
     pthread_mutex_t lock;
-
-    // TODO: Remove when using an event loop.
-    pthread_cond_t cond;
-
     atomic_int worker_stopped;
     pthread_t worker;
 
     // TODO: Remove when using an event loop.
+    pthread_cond_t cond;
     struct write_task* head;
     struct write_task* tail;
 };
@@ -54,14 +52,14 @@ static struct write_task* write_queue_pop(struct write_queue* queue) {
     return task;
 }
 
-static void complete_write_task_sync(struct write_task* task) {
+static void complete_write_task_sync(struct write_queue* queue, struct write_task* task) {
     int written_sz = 0;
     while (written_sz < task->buf_len) {
         ssize_t chunk_sz = write(task->conn->fd, task->buf + written_sz, task->buf_len - written_sz);
         if (chunk_sz < 0) {
             LOG_ERROR("write() failed with errno=%d (%s)", errno, strerror(errno));
             task->cb(task->cb_data, task->conn, errno);
-            // TODO: Force-close the TCP connection on error, to avoid sending corrupt data!
+            close_tcp_conn(queue->tcp_server, task->conn);
             tcp_conn_dec_refcount(task->conn);
             free(task);
             return;
@@ -75,20 +73,21 @@ static void complete_write_task_sync(struct write_task* task) {
 }
 
 // TODO: Implement this worker as an event loop (epoll/kqueue) to write data whenever the socket is ready to receive it.
-void* write_queue_worker(void* arg) {
+static void* write_queue_worker(void* arg) {
     struct write_queue* queue = (struct write_queue*)arg;
     while (atomic_load_explicit(&queue->worker_stopped, memory_order_acquire) == 0) {
         struct write_task* task = write_queue_pop(queue);
-        complete_write_task_sync(task);
+        complete_write_task_sync(queue, task);
     }
     return 0;
 }
 
-struct write_queue* new_write_queue() {
+struct write_queue* new_write_queue(struct tcp_server* tcp_server) {
     struct write_queue* queue = malloc(sizeof(struct write_queue));
     if (queue == 0) {
         return 0;
     }
+    queue->tcp_server = tcp_server;
     ASSERT_0(pthread_mutex_init(&queue->lock, 0));
     ASSERT_0(pthread_cond_init(&queue->cond, 0));
     queue->head = 0;
@@ -104,7 +103,7 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
     if (task == 0) {
         LOG_ERROR("Failed to allocate write task for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
         cb(cb_data, conn, -1);
-        // TODO: Force-close the TCP connection on error, to avoid sending corrupt data!
+        close_tcp_conn(queue->tcp_server, conn);
         return;
     }
 

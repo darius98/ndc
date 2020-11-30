@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,8 @@ struct tcp_server {
     struct write_queue* w_queue;
     int listen_fd;
     int port;
+
+    pthread_mutex_t close_conn_lock;
 
     int conn_buf_len;
 
@@ -114,7 +117,7 @@ struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int 
         LOG_FATAL("Failed to allocate memory for tcp server connections table structure");
     }
 
-    struct write_queue* w_queue = new_write_queue();
+    struct write_queue* w_queue = new_write_queue(server);
     if (w_queue == 0) {
         LOG_FATAL("Failed to allocate memory for write queue structure");
     }
@@ -141,6 +144,7 @@ struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int 
     server->w_queue = w_queue;
     server->listen_fd = listen_fd;
     server->port = port;
+    ASSERT_0(pthread_mutex_init(&server->close_conn_lock, 0));
     server->conn_buf_len = conn_buf_len;
     server->cb_data = cb_data;
     return server;
@@ -197,6 +201,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     conn->user_data = 0;
     conn->ipv4 = ipv4;
     conn->port = port;
+    conn->is_closed = 0;
     if (tcp_conn_table_insert(server->conn_table, conn) < 0) {
         LOG_ERROR("Failed to grow tcp connection table bucket");
         if (close(fd) < 0) {
@@ -244,11 +249,21 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
 }
 
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
-    if (tcp_conn_before_close_callback(server->cb_data, conn) < 0) {
-        // If the client fails to close the connection on their part,
-        // leak the connection rather than break the application.
+    int should_close = 0;
+    ASSERT_0(pthread_mutex_lock(&server->close_conn_lock));
+    if (!conn->is_closed) {
+        conn->is_closed = 1;
+        should_close = 1;
+    }
+    ASSERT_0(pthread_mutex_unlock(&server->close_conn_lock));
+    if (should_close == 0) {
+        LOG_DEBUG("Trying to close TCP connection that is already closed %s:%d (fd=%d)", ipv4_str(conn->ipv4),
+                  conn->port, conn->fd);
         return;
     }
+
+    tcp_conn_before_close_callback(server->cb_data, conn);
+    // TODO: Fail and free leftover write tasks for this connection.
     if (tcp_conn_table_erase(server->conn_table, conn) < 0) {
         LOG_ERROR(
             "connection %s:%d (fd=%d) is not in TCP connections table. Memory for this "
