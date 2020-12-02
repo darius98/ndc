@@ -12,7 +12,7 @@ struct tcp_conn {
     void* user_data;
     int ipv4;
     int port;
-    int is_closed;
+    _Atomic(int) is_closed;
 };
 
 struct tcp_server;

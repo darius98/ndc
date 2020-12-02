@@ -1,17 +1,17 @@
 #include "write_queue.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
-#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
-#include <zconf.h>
+#include <unistd.h>
 
 #include "logging.h"
 #include "tcp_server.h"
+#include "write_worker_loop.h"
 
 struct write_task {
-    struct tcp_conn* conn;
     int buf_crs;
     int buf_len;
     const char* buf;
@@ -20,95 +20,214 @@ struct write_task {
     struct write_task* next;
 };
 
-struct write_queue {
-    struct tcp_server* tcp_server;
-    pthread_mutex_t lock;
-    atomic_int worker_stopped;
-    pthread_t worker;
-
-    // TODO: Remove when using an event loop.
-    pthread_cond_t cond;
+struct write_task_list {
+    int ref_count;
+    struct tcp_conn* conn;
     struct write_task* head;
     struct write_task* tail;
 };
 
-static struct write_task* write_queue_pop(struct write_queue* queue) {
-    struct write_task* task;
-    ASSERT_0(pthread_mutex_lock(&queue->lock));
-    while (1) {
-        task = queue->head;
-        if (task == 0) {
-            ASSERT_0(pthread_cond_wait(&queue->cond, &queue->lock));
-        } else {
-            queue->head = task->next;
-            if (queue->head == 0) {
-                queue->tail = 0;
-            }
-            task->next = 0;
-            break;
+struct write_task_list_table_bucket {
+    int len;
+    int cap;
+    struct write_task_list** entries;
+};
+
+struct write_task_list_table {
+    pthread_mutex_t lock;
+    int size;
+    int n_buckets;
+    struct write_task_list_table_bucket* buckets;
+};
+
+static void init_tasks_list_table(struct write_task_list_table* table, int n_buckets, int bucket_init_cap) {
+    table->size = 0;
+    table->n_buckets = n_buckets;
+    table->buckets = malloc(sizeof(struct write_task_list_table_bucket) * n_buckets);
+    if (table->buckets == 0) {
+        LOG_FATAL("Failed to allocate buckets array for write task lists table");
+    }
+    for (int i = 0; i < n_buckets; i++) {
+        table->buckets[i].len = 0;
+        table->buckets[i].cap = bucket_init_cap;
+        table->buckets[i].entries = malloc(sizeof(struct write_task_list*) * bucket_init_cap);
+        if (table->buckets[i].entries == 0) {
+            LOG_FATAL("Failed to allocate bucket %d for write task lists table", i);
         }
     }
-    ASSERT_0(pthread_mutex_unlock(&queue->lock));
-    return task;
+    ASSERT_0(pthread_mutex_init(&table->lock, 0));
 }
 
-static void complete_write_task_sync(struct write_queue* queue, struct write_task* task) {
-    int written_sz = 0;
-    while (written_sz < task->buf_len) {
-        ssize_t chunk_sz = write(task->conn->fd, task->buf + written_sz, task->buf_len - written_sz);
-        if (chunk_sz < 0) {
-            LOG_ERROR("write() failed with errno=%d (%s)", errno, strerror(errno));
-            task->cb(task->cb_data, task->conn, errno);
-            close_tcp_conn(queue->tcp_server, task->conn);
-            tcp_conn_dec_refcount(task->conn);
-            free(task);
-            return;
+static int add_task_list(struct write_task_list_table* table, struct tcp_conn* conn) {
+    struct write_task_list* task_list = malloc(sizeof(struct write_task_list));
+    if (task_list == 0) {
+        LOG_ERROR("Failed to allocate write task list for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
+        return -1;
+    }
+    tcp_conn_inc_refcount(conn);
+    task_list->ref_count = 0;
+    task_list->conn = conn;
+    task_list->head = 0;
+    task_list->tail = 0;
+
+    ASSERT_0(pthread_mutex_lock(&table->lock));
+    struct write_task_list_table_bucket* bucket = &table->buckets[conn->fd % table->n_buckets];
+    if (bucket->len == bucket->cap) {
+        void* resized = realloc(bucket->entries, sizeof(void*) * bucket->cap * 2);
+        if (resized == 0) {
+            ASSERT_0(pthread_mutex_unlock(&table->lock));
+            tcp_conn_dec_refcount(conn);
+            free(task_list);
+            return -1;
         }
-        written_sz += chunk_sz;
+        bucket->entries = resized;
+        bucket->cap *= 2;
     }
-    LOG_DEBUG("Wrote %d bytes to %s:%d", task->buf_len, ipv4_str(task->conn->ipv4), task->conn->port);
-    task->cb(task->cb_data, task->conn, 0);
-    tcp_conn_dec_refcount(task->conn);
-    free(task);
-}
-
-// TODO: Implement this worker as an event loop (epoll/kqueue) to write data whenever the socket is ready to receive it.
-static void* write_queue_worker(void* arg) {
-    struct write_queue* queue = (struct write_queue*)arg;
-    while (atomic_load_explicit(&queue->worker_stopped, memory_order_acquire) == 0) {
-        struct write_task* task = write_queue_pop(queue);
-        complete_write_task_sync(queue, task);
-    }
+    task_list->ref_count++;
+    bucket->entries[bucket->len++] = task_list;
+    table->size++;
+    ASSERT_0(pthread_mutex_unlock(&table->lock));
     return 0;
 }
 
-struct write_queue* new_write_queue(struct tcp_server* tcp_server) {
+static void remove_task_list(struct write_task_list_table* table, int fd) {
+    struct write_task_list* task_list = 0;
+    ASSERT_0(pthread_mutex_lock(&table->lock));
+    struct write_task_list_table_bucket* bucket = &table->buckets[fd % table->n_buckets];
+    for (int i = 0; i < bucket->len; i++) {
+        if (bucket->entries[i]->conn->fd == fd) {
+            task_list = bucket->entries[i];
+            task_list->ref_count -= 1;
+            if (task_list->ref_count > 0) {
+                task_list = 0;
+            }
+            bucket->entries[i] = bucket->entries[bucket->len - 1];
+            bucket->len--;
+            table->size--;
+            break;
+        }
+    }
+    ASSERT_0(pthread_mutex_unlock(&table->lock));
+    if (task_list != 0) {
+        tcp_conn_dec_refcount(task_list->conn);
+        free(task_list);
+    }
+}
+
+static struct write_task_list* get_task_list(struct write_task_list_table* table, int fd) {
+    struct write_task_list* task_list = 0;
+    ASSERT_0(pthread_mutex_lock(&table->lock));
+    struct write_task_list_table_bucket* bucket = &table->buckets[fd % table->n_buckets];
+    for (int i = 0; i < bucket->len; i++) {
+        if (bucket->entries[i]->conn->fd == fd) {
+            task_list = bucket->entries[i];
+            task_list->ref_count += 1;
+            break;
+        }
+    }
+    ASSERT_0(pthread_mutex_unlock(&table->lock));
+    return task_list;
+}
+
+static void release_task_list(struct write_task_list_table* table, struct write_task_list* task_list) {
+    ASSERT_0(pthread_mutex_lock(&table->lock));
+    task_list->ref_count -= 1;
+    if (task_list->ref_count > 0) {
+        task_list = 0;
+    }
+    ASSERT_0(pthread_mutex_unlock(&table->lock));
+    if (task_list != 0) {
+        tcp_conn_dec_refcount(task_list->conn);
+        free(task_list);
+    }
+}
+
+struct write_queue {
+    struct tcp_server* tcp_server;
+    struct write_task_list_table task_lists;
+    pthread_mutex_t lock;
+    int worker_loop_notify_pipe[2];
+    struct write_worker_loop* worker_loop;
+    pthread_t worker;
+};
+
+static void* write_queue_worker(void* arg) {
+    struct write_queue* queue = (struct write_queue*)arg;
+    write_worker_loop_run(queue->worker_loop, queue);
+    return 0;
+}
+
+struct write_queue* new_write_queue(struct tcp_server* tcp_server, int task_lists_n_buckets,
+                                    int task_lists_bucket_init_cap) {
     struct write_queue* queue = malloc(sizeof(struct write_queue));
     if (queue == 0) {
-        return 0;
+        LOG_FATAL("Failed to allocate memory for write queue structure");
     }
     queue->tcp_server = tcp_server;
+
+    init_tasks_list_table(&queue->task_lists, task_lists_n_buckets, task_lists_bucket_init_cap);
     ASSERT_0(pthread_mutex_init(&queue->lock, 0));
-    ASSERT_0(pthread_cond_init(&queue->cond, 0));
-    queue->head = 0;
-    queue->tail = 0;
-    atomic_store_explicit(&queue->worker_stopped, 0, memory_order_release);
+    ASSERT_0(pipe(queue->worker_loop_notify_pipe));
+    int prev_flags = fcntl(queue->worker_loop_notify_pipe[0], F_GETFD);
+    if (prev_flags < 0) {
+        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
+    }
+    ASSERT_0(fcntl(queue->worker_loop_notify_pipe[0], F_SETFD, prev_flags | O_NONBLOCK));
+    prev_flags = fcntl(queue->worker_loop_notify_pipe[0], F_GETFD);
+    if (prev_flags < 0) {
+        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
+    }
+    ASSERT_0(fcntl(queue->worker_loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK));
+    queue->worker_loop = new_write_worker_loop(queue->worker_loop_notify_pipe[0]);
     ASSERT_0(pthread_create(&queue->worker, 0, write_queue_worker, queue));
     return queue;
 }
 
+int write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn) {
+    if (write_worker_loop_add_fd(queue->worker_loop, conn->fd) < 0) {
+        return -1;
+    }
+    if (add_task_list(&queue->task_lists, conn) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+struct write_worker_notification {
+    int fd;
+    enum
+    {
+        ww_notify_execute,
+        ww_notify_remove
+    } type;
+};
+
+void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn) {
+    struct write_worker_notification notification;
+    notification.fd = conn->fd;
+    notification.type = ww_notify_remove;
+    // TODO: EH.
+    write(queue->worker_loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
+}
+
 void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const char* buf, int buf_len, void* cb_data,
                       write_task_cb cb) {
+    struct write_task_list* task_list = get_task_list(&queue->task_lists, conn->fd);
+    if (task_list == 0) {
+        LOG_ERROR("Failed to allocate write task list for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
+        cb(cb_data, conn, -1);
+        close_tcp_conn(queue->tcp_server, conn);
+        return;
+    }
     struct write_task* task = malloc(sizeof(struct write_task));
     if (task == 0) {
         LOG_ERROR("Failed to allocate write task for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
         cb(cb_data, conn, -1);
         close_tcp_conn(queue->tcp_server, conn);
+        release_task_list(&queue->task_lists, task_list);
         return;
     }
 
-    tcp_conn_inc_refcount(conn);
-    task->conn = conn;
     task->buf_crs = 0;
     task->buf_len = buf_len;
     task->buf = buf;
@@ -117,13 +236,85 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
 
     ASSERT_0(pthread_mutex_lock(&queue->lock));
     task->next = 0;
-    if (queue->tail != 0) {
-        queue->tail->next = task;
+    if (task_list->tail != 0) {
+        task_list->tail->next = task;
     }
-    queue->tail = task;
-    if (queue->head == 0) {
-        queue->head = task;
+    task_list->tail = task;
+    if (task_list->head == 0) {
+        task_list->head = task;
     }
     ASSERT_0(pthread_mutex_unlock(&queue->lock));
-    ASSERT_0(pthread_cond_signal(&queue->cond));
+    struct write_worker_notification notification;
+    notification.fd = task_list->conn->fd;
+    notification.type = ww_notify_execute;
+    // TODO: EH.
+    write(queue->worker_loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
+
+    release_task_list(&queue->task_lists, task_list);
+}
+
+static struct write_task* write_queue_top(struct write_queue* queue, struct write_task_list* task_list) {
+    struct write_task* task;
+    ASSERT_0(pthread_mutex_lock(&queue->lock));
+    task = task_list->head;
+    ASSERT_0(pthread_mutex_unlock(&queue->lock));
+    return task;
+}
+
+static void write_queue_pop(struct write_queue* queue, struct write_task_list* task_list,
+                            struct write_task* expected_task, int err) {
+    struct write_task* task;
+    ASSERT_0(pthread_mutex_lock(&queue->lock));
+    task = task_list->head;
+    ASSERT(expected_task == task);
+    task_list->head = task->next;
+    if (task_list->head == 0) {
+        task_list->tail = 0;
+    }
+    task->next = 0;
+    ASSERT_0(pthread_mutex_unlock(&queue->lock));
+    task->cb(task->cb_data, task_list->conn, err);
+    free(task);
+}
+
+void write_queue_process_writes(struct write_queue* queue, int fd) {
+    struct write_task_list* task_list = get_task_list(&queue->task_lists, fd);
+    if (task_list == 0) {
+        LOG_DEBUG("Could not find write task list for fd=%d", fd);
+        return;
+    }
+    struct write_task* task = write_queue_top(queue, task_list);
+    while (task != 0) {
+        ssize_t chunk_sz = write(fd, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
+        if (chunk_sz < 0 && errno != EWOULDBLOCK) {
+            LOG_ERROR("write() failed with errno=%d (%s)", errno, strerror(errno));
+            write_queue_pop(queue, task_list, task, errno);
+            close_tcp_conn(queue->tcp_server, task_list->conn);
+        } else if (chunk_sz > 0) {
+            LOG_DEBUG("Wrote %d bytes to %s:%d", (int)chunk_sz, ipv4_str(task_list->conn->ipv4), task_list->conn->port);
+            task->buf_crs += chunk_sz;
+            if (task->buf_crs == task->buf_len) {
+                write_queue_pop(queue, task_list, task, 0);
+                task = write_queue_top(queue, task_list);
+            }
+        }
+    }
+    release_task_list(&queue->task_lists, task_list);
+}
+
+void write_queue_process_notification(struct write_queue* queue) {
+    struct write_worker_notification notification;
+    errno = 0;
+    ssize_t n_bytes = read(queue->worker_loop_notify_pipe[0], &notification, sizeof(struct write_worker_notification));
+    if (n_bytes != sizeof(struct write_worker_notification)) {
+        LOG_FATAL(
+            "Write worker loop: failed to read write_task_list pointer from notify pipe, returned %d, errno=%d "
+            "(%s)",
+            (int)n_bytes, errno, strerror(errno));
+    }
+    if (notification.type == ww_notify_execute) {
+        write_queue_process_writes(queue, notification.fd);
+    } else if (notification.type == ww_notify_remove) {
+        remove_task_list(&queue->task_lists, notification.fd);
+    }
 }

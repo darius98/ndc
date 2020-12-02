@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <sys/event.h>
 #include <unistd.h>
@@ -13,7 +14,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
     }
 
     struct kevent event;
-    EV_SET(&event, tcp_server_get_fd(server), EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
+    EV_SET(&event, tcp_server_get_fd(server), EVFILT_READ, EV_ADD, 0, 0, 0);
     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
         LOG_FATAL("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, strerror(errno));
     }
@@ -41,7 +42,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
             LOG_DEBUG("Received kevent on TCP server socket (fd=%d)", tcp_server_get_fd(server));
             conn = accept_tcp_conn(server);
             if (conn != 0) {
-                EV_SET(&event, conn->fd, EVFILT_READ, EV_ADD, 0, 0, 0);
+                EV_SET(&event, conn->fd, EVFILT_READ, EV_ADD, 0, 0, conn);
                 if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
                     LOG_ERROR("Could not accept TCP connection from %s:%d (fd=%d), kevent() failed errno=%d (%s)",
                               ipv4_str(conn->ipv4), conn->port, conn->fd, errno, strerror(errno));
@@ -49,29 +50,30 @@ void run_tcp_server_loop(struct tcp_server *server) {
                 }
             }
         } else {
-            conn = find_tcp_conn(server, event_fd);
-            if (conn == 0) {
-                LOG_WARN("Received kevent() on fd=%d, but could not find connection", event_fd);
-            } else {
-                LOG_DEBUG("Received kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
-                if (event.flags & EV_EOF) {
+            conn = (struct tcp_conn *)event.udata;
+            if (event.flags & EV_EOF) {
+                if (atomic_load_explicit(&conn->is_closed, memory_order_acquire) == 0) {
+                    LOG_DEBUG("Closing connection %s:%d (fd=%d) because of EOF kevent",
+                              ipv4_str(conn->ipv4), conn->port, conn->fd);
                     close_tcp_conn(server, conn);
-                } else if (event.filter & EVFILT_READ) {
-                    int n_bytes = recv_from_tcp_conn(server, conn);
-                    if (n_bytes <= 0) {
-                        if (n_bytes == 0) {
-                            LOG_WARN("Spurious wake-up of connection %s:%d (fd=%d), had no bytes to read",
-                                     ipv4_str(conn->ipv4), conn->port, conn->fd);
-                        } else {
-                            LOG_ERROR("Closing TCP connection to %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
-                                      conn->fd);
-                            close_tcp_conn(server, conn);
-                        }
-                    }
-                } else {
-                    LOG_ERROR("Received unexpected event from kevent() fd=%d, event.flags=%d, event.filter=%u",
-                              event_fd, event.flags, event.filter);
                 }
+            } else if (event.filter & EVFILT_READ) {
+                LOG_DEBUG("Received read kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
+                          conn->fd);
+                int n_bytes = recv_from_tcp_conn(server, conn);
+                if (n_bytes <= 0) {
+                    if (n_bytes == 0) {
+                        LOG_WARN("Spurious wake-up of connection %s:%d (fd=%d), had no bytes to read",
+                                 ipv4_str(conn->ipv4), conn->port, conn->fd);
+                    } else {
+                        LOG_ERROR("Closing TCP connection to %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
+                                  conn->fd);
+                        close_tcp_conn(server, conn);
+                    }
+                }
+            } else {
+                LOG_ERROR("Received unexpected event from kevent() fd=%d, event.flags=%d, event.filter=%u", event_fd,
+                          event.flags, event.filter);
             }
         }
     }

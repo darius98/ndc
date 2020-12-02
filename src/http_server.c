@@ -291,7 +291,7 @@ int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn) {
 
 int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn) {
     int bytes_read = read_http_reqs((struct http_server*)cb_data, conn);
-    if (bytes_read < 0) {
+    if (bytes_read <= 0) {
         return bytes_read;
     }
     if (bytes_read != conn->buf_len) {

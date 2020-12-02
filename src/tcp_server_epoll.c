@@ -39,7 +39,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
         }
         int event_fd = (int)event.data.fd;
         if (event_fd == tcp_server_get_fd(server)) {
-            LOG_DEBUG("Received epoll event on TCP server socket (fd=%d)", server->listen_fd);
+            LOG_DEBUG("Received epoll event on TCP server socket (fd=%d)", tcp_server_get_fd(server));
             conn = accept_tcp_conn(server);
             if (conn != 0) {
                 event.events = EPOLLIN | EPOLLET;
