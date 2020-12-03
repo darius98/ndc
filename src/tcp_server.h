@@ -1,7 +1,7 @@
 #ifndef NDC_TCP_SERVER_H_
 #define NDC_TCP_SERVER_H_
 
-struct write_queue;
+#include "write_queue.h"
 
 struct tcp_conn {
     _Atomic(int) ref_count;
@@ -15,18 +15,32 @@ struct tcp_conn {
     _Atomic(int) is_closed;
 };
 
-struct tcp_server;
+struct tcp_conn_table_bucket {
+    int size;
+    int capacity;
+    struct tcp_conn** entries;
+};
 
-/// Allocate and initialize a TCP server.
-/// Note: Aborts on failure.
-struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
-                                  void* cb_data);
+struct tcp_conn_table {
+    int size;
+    int n_buckets;
+    struct tcp_conn_table_bucket* buckets;
+};
 
-int tcp_server_get_fd(struct tcp_server* server);
+struct tcp_server {
+    struct tcp_conn_table conn_table;
+    struct write_queue w_queue;
+    int listen_fd;
+    int port;
 
-int tcp_server_get_port(struct tcp_server* server);
+    int conn_buf_len;
 
-struct write_queue* get_write_queue(struct tcp_server* server);
+    void* cb_data;
+};
+
+/// Initialize a TCP server. Note: Aborts on failure.
+void init_tcp_server(struct tcp_server* server, int port, int max_clients, int n_buckets, int bucket_init_cap,
+                     int conn_buf_len);
 
 struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 

@@ -1,6 +1,9 @@
 #ifndef NDC_HTTP_H_
 #define NDC_HTTP_H_
 
+#include <pthread.h>
+#include <stdatomic.h>
+
 struct tcp_conn;
 
 struct http_req {
@@ -40,11 +43,24 @@ struct http_req {
     struct http_req* next;
 };
 
-struct http_server;
+struct http_server {
+    struct http_req* head;
+    struct http_req* tail;
 
-/// Allocate and initialize a http server.
-/// Note: Aborts on failure.
-struct http_server* new_http_server(int req_buf_cap, int num_workers, void* cb_data);
+    pthread_mutex_t lock;
+    pthread_cond_t cond_var;
+    atomic_int stopped;
+
+    void* cb_data;
+
+    int req_buf_cap;
+
+    int num_workers;
+    pthread_t* workers;
+};
+
+/// Initialize a http server. Note: Aborts on failure.
+void init_http_server(struct http_server* server, int req_buf_cap, int num_workers);
 
 void delete_http_req(struct http_req* req);
 

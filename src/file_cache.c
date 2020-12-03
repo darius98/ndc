@@ -2,7 +2,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -11,46 +10,22 @@
 
 #include "logging.h"
 
-struct file_cache_bucket {
-    int size;
-    int cap;
-    struct mapped_file** entries;
-};
-
-struct file_cache {
-    int size;
-    int n_buckets;
-    struct file_cache_bucket* buckets;
-    pthread_mutex_t lock;
-};
-
-struct file_cache* new_file_cache(int n_buckets, int bucket_init_cap) {
-    struct file_cache* cache = malloc(sizeof(struct file_cache));
-    if (cache == 0) {
-        return 0;
-    }
+void init_file_cache(struct file_cache* cache, int n_buckets, int bucket_init_cap) {
     ASSERT_0(pthread_mutex_init(&cache->lock, 0));
     cache->size = 0;
     cache->n_buckets = n_buckets;
     cache->buckets = malloc(sizeof(struct file_cache_bucket) * n_buckets);
     if (cache->buckets == 0) {
-        free(cache);
-        return 0;
+        LOG_FATAL("Failed to allocate buckets array for file cache.");
     }
     for (int i = 0; i < cache->n_buckets; i++) {
         cache->buckets[i].size = 0;
         cache->buckets[i].cap = bucket_init_cap;
         cache->buckets[i].entries = malloc(sizeof(void*) * cache->buckets[i].cap);
         if (cache->buckets[i].entries == 0) {
-            for (int j = 0; j < i; j++) {
-                free(cache->buckets[j].entries);
-            }
-            free(cache->buckets);
-            free(cache);
-            return 0;
+            LOG_FATAL("Failed to allocate entries array for bucket %d of the file cache.", i);
         }
     }
-    return cache;
 }
 
 static unsigned int make_hash_key(const char* path, int path_len) {

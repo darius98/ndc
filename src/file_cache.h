@@ -1,6 +1,8 @@
 #ifndef NDC_FILE_CACHE_H_
 #define NDC_FILE_CACHE_H_
 
+#include <pthread.h>
+
 struct mapped_file {
     int ref_count;
     int fd;
@@ -11,9 +13,21 @@ struct mapped_file {
     void* content;
 };
 
-struct file_cache;
+struct file_cache_bucket {
+    int size;
+    int cap;
+    struct mapped_file** entries;
+};
 
-struct file_cache* new_file_cache(int n_buckets, int bucket_init_cap);
+struct file_cache {
+    int size;
+    int n_buckets;
+    struct file_cache_bucket* buckets;
+    pthread_mutex_t lock;
+};
+
+/// Initialize a new file cache. Note: Aborts on failure.
+void init_file_cache(struct file_cache* cache, int n_buckets, int bucket_init_cap);
 
 /// Note: Takes ownership of path.
 struct mapped_file* open_file(struct file_cache* cache, char* path);

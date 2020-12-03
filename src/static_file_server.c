@@ -11,15 +11,6 @@
 #include "tcp_server.h"
 #include "write_queue.h"
 
-struct static_file_server {
-    struct file_cache* cache;
-    int base_dir_len;
-    char* base_dir;
-
-    struct write_queue* write_queue;
-    struct tcp_server* tcp_server;
-};
-
 static const char* http_404_response =
     "HTTP/1.1 404 Not found\r\n"
     "Server: NDC/1.0.0\r\n"
@@ -42,28 +33,16 @@ static struct known_extension known_extensions[NUM_KNOWN_EXTENSIONS] = {
     {.ext = ".xml", .ext_len = 4, .content_type = "text/xml"},
 };
 
-struct static_file_server* new_static_file_server(const char* base_dir, int fcache_n_buckets,
-                                                  int fcache_bucket_init_cap) {
-    struct static_file_server* server = malloc(sizeof(struct static_file_server));
-    if (server == 0) {
-        LOG_FATAL("Failed to allocate memory for static file server");
-    }
-    server->cache = new_file_cache(fcache_n_buckets, fcache_bucket_init_cap);
-    if (server->cache == 0) {
-        LOG_FATAL("Failed to allocate memory for file cache");
-    }
+void init_static_file_server(struct static_file_server* server, struct file_cache* cache, struct tcp_server* tcp_server,
+                             const char* base_dir) {
+    server->tcp_server = tcp_server;
+    server->cache = cache;
     server->base_dir_len = strlen(base_dir);
     server->base_dir = malloc(server->base_dir_len + 1);
     if (server->base_dir == 0) {
         LOG_FATAL("Failed to allocate memory for static file server base_dir string.");
     }
     strcpy(server->base_dir, base_dir);
-    return server;
-}
-
-void static_file_server_set_tcp_server(struct static_file_server* server, struct tcp_server* tcp_server) {
-    server->tcp_server = tcp_server;
-    server->write_queue = get_write_queue(tcp_server);
 }
 
 static void http_404_write_cb(void* data, struct tcp_conn* conn, int err) {
@@ -122,7 +101,7 @@ static void serve_static_file(struct static_file_server* server, struct http_req
 
     struct mapped_file* file = open_file(server->cache, path);
     if (file == 0) {
-        write_queue_push(server->write_queue, req->conn, http_404_response, http_404_response_len, req,
+        write_queue_push(&server->tcp_server->w_queue, req->conn, http_404_response, http_404_response_len, req,
                          http_404_write_cb);
         return;
     }
@@ -163,9 +142,9 @@ static void serve_static_file(struct static_file_server* server, struct http_req
         delete_http_req(req);
         return;
     }
-    write_queue_push(server->write_queue, req->conn, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data,
+    write_queue_push(&server->tcp_server->w_queue, req->conn, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data,
                      http_200_response_headers_cb);
-    write_queue_push(server->write_queue, req->conn, file->content, file->content_len, cb_data,
+    write_queue_push(&server->tcp_server->w_queue, req->conn, file->content, file->content_len, cb_data,
                      http_200_response_body_cb);
 }
 

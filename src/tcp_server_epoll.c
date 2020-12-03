@@ -14,12 +14,12 @@ void run_tcp_server_loop(struct tcp_server *server) {
 
     struct epoll_event event;
     event.events = EPOLLIN;
-    event.data.fd = tcp_server_get_fd(server);
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, tcp_server_get_fd(server), &event) < 0 && errno != EINTR) {
+    event.data.fd = server->listen_fd;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server->listen_fd, &event) < 0 && errno != EINTR) {
         LOG_FATAL("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, strerror(errno));
     }
 
-    LOG_INFO("Running HTTP server on port %d", tcp_server_get_port(server));
+    LOG_INFO("Running HTTP server on port %d", server->port);
 
     struct tcp_conn *conn;
     while (1) {
@@ -38,8 +38,8 @@ void run_tcp_server_loop(struct tcp_server *server) {
             LOG_ERROR("Server: epoll_wait() returned %d events when capacity was 1.", n_ev);
         }
         int event_fd = (int)event.data.fd;
-        if (event_fd == tcp_server_get_fd(server)) {
-            LOG_DEBUG("Received epoll event on TCP server socket (fd=%d)", tcp_server_get_fd(server));
+        if (event_fd == server->listen_fd) {
+            LOG_DEBUG("Received epoll event on TCP server socket (fd=%d)", server->listen_fd);
             conn = accept_tcp_conn(server);
             if (conn != 0) {
                 event.events = EPOLLIN | EPOLLET;

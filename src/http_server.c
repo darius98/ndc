@@ -9,22 +9,6 @@
 #include "logging.h"
 #include "tcp_server.h"
 
-struct http_server {
-    struct http_req* head;
-    struct http_req* tail;
-
-    pthread_mutex_t lock;
-    pthread_cond_t cond_var;
-    atomic_int stopped;
-
-    void* cb_data;
-
-    int req_buf_cap;
-
-    int num_workers;
-    pthread_t* workers;
-};
-
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
     LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port);
     ASSERT_0(pthread_mutex_lock(&server->lock));
@@ -70,23 +54,12 @@ static void* http_worker(void* arg) {
     return 0;
 }
 
-struct http_server* new_http_server(int req_buf_cap, int num_workers, void* cb_data) {
-    struct http_server* server = malloc(sizeof(struct http_server));
-    if (server == 0) {
-        LOG_FATAL("Failed to allocate memory for HTTP server");
-    }
+void init_http_server(struct http_server* server, int req_buf_cap, int num_workers) {
     server->head = 0;
     server->tail = 0;
     server->req_buf_cap = req_buf_cap;
-    server->cb_data = cb_data;
-    int err = pthread_mutex_init(&server->lock, 0);
-    if (err != 0) {
-        LOG_FATAL("Failed to initialize HTTP server: pthread_mutex_init() failed with error=%d", err);
-    }
-    err = pthread_cond_init(&server->cond_var, 0);
-    if (err != 0) {
-        LOG_FATAL("Failed to initialize HTTP server: pthread_cond_init() failed with error=%d", err);
-    }
+    ASSERT_0(pthread_mutex_init(&server->lock, 0));
+    ASSERT_0(pthread_cond_init(&server->cond_var, 0));
     atomic_store_explicit(&server->stopped, 0, memory_order_release);
     server->num_workers = num_workers;
     server->workers = malloc(num_workers * sizeof(pthread_t));
@@ -94,12 +67,8 @@ struct http_server* new_http_server(int req_buf_cap, int num_workers, void* cb_d
         LOG_FATAL("Failed to allocate memory for HTTP worker threads array.");
     }
     for (int i = 0; i < num_workers; i++) {
-        err = pthread_create(&server->workers[i], 0, http_worker, server);
-        if (err != 0) {
-            LOG_FATAL("Failed to start HTTP worker: pthread_create() failed with error=%d", err);
-        }
+        ASSERT_0(pthread_create(&server->workers[i], 0, http_worker, server));
     }
-    return server;
 }
 
 void delete_http_req(struct http_req* req) {

@@ -22,12 +22,12 @@ if (USE_KQUEUE)
     message(STATUS "Using kqueue for tcp loop")
     list(APPEND ndc_sources
             src/tcp_server_kqueue.c
-            src/write_worker_loop_kqueue.c)
+            src/write_queue_kqueue.c)
 elseif (USE_EPOLL)
     message(STATUS "Using epoll for tcp loop")
     list(APPEND ndc_sources
             src/tcp_server_epoll.c
-            src/write_worker_loop_epoll.c)
+            src/write_queue_epoll.c)
 else ()
     message(FATAL_ERROR "No suitable backend for tcp loop (kqueue and epoll are supported)")
 endif()

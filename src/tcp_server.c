@@ -10,55 +10,21 @@
 #include "logging.h"
 #include "write_queue.h"
 
-struct tcp_conn_table_bucket {
-    int size;
-    int capacity;
-    struct tcp_conn** entries;
-};
-
-struct tcp_conn_table {
-    int size;
-    int n_buckets;
-    struct tcp_conn_table_bucket* buckets;
-};
-
-struct tcp_server {
-    struct tcp_conn_table* conn_table;
-    struct write_queue* w_queue;
-    int listen_fd;
-    int port;
-
-    int conn_buf_len;
-
-    void* cb_data;
-};
-
-static struct tcp_conn_table* new_tcp_conn_table(int n_buckets, int bucket_init_cap) {
-    struct tcp_conn_table* conn_table = malloc(sizeof(struct tcp_conn_table));
-    if (conn_table == 0) {
-        return 0;
-    }
+static void init_tcp_conn_table(struct tcp_conn_table* conn_table, int n_buckets, int bucket_init_cap) {
     conn_table->size = 0;
     conn_table->n_buckets = n_buckets;
     conn_table->buckets = malloc(sizeof(struct tcp_conn_table_bucket) * n_buckets);
     if (conn_table->buckets == 0) {
-        free(conn_table);
-        return 0;
+        LOG_FATAL("Failed to allocate buckets for tcp_conn_table");
     }
     for (int i = 0; i < conn_table->n_buckets; i++) {
         conn_table->buckets[i].size = 0;
         conn_table->buckets[i].capacity = bucket_init_cap;
         conn_table->buckets[i].entries = malloc(sizeof(void*) * conn_table->buckets[i].capacity);
         if (conn_table->buckets[i].entries == 0) {
-            for (int j = 0; j < i; j++) {
-                free(conn_table->buckets[j].entries);
-            }
-            free(conn_table->buckets);
-            free(conn_table);
-            return 0;
+            LOG_FATAL("Failed to allocate entries for bucket %d of tcp_conn_table", i);
         }
     }
-    return conn_table;
 }
 
 static int tcp_conn_table_insert(struct tcp_conn_table* conn_table, struct tcp_conn* conn) {
@@ -90,8 +56,8 @@ static void tcp_conn_table_erase(struct tcp_conn_table* conn_table, struct tcp_c
 }
 
 struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
-    int bucket_id = fd % server->conn_table->n_buckets;
-    struct tcp_conn_table_bucket* bucket = &server->conn_table->buckets[bucket_id];
+    int bucket_id = fd % server->conn_table.n_buckets;
+    struct tcp_conn_table_bucket* bucket = &server->conn_table.buckets[bucket_id];
     for (int i = 0; i < bucket->size; i++) {
         if (bucket->entries[i]->fd == fd) {
             return bucket->entries[i];
@@ -100,22 +66,10 @@ struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
     return 0;
 }
 
-struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int bucket_init_cap, int conn_buf_len,
-                                  void* cb_data) {
-    struct tcp_server* server = malloc(sizeof(struct tcp_server));
-    if (server == 0) {
-        LOG_FATAL("Failed to allocate memory for tcp server structure");
-    }
-
-    struct tcp_conn_table* conn_table = new_tcp_conn_table(n_buckets, bucket_init_cap);
-    if (conn_table == 0) {
-        LOG_FATAL("Failed to allocate memory for tcp server connections table structure");
-    }
-
-    struct write_queue* w_queue = new_write_queue(server, n_buckets, bucket_init_cap);
-    if (w_queue == 0) {
-        LOG_FATAL("Failed to allocate memory for write queue structure");
-    }
+void init_tcp_server(struct tcp_server* server, int port, int max_clients, int n_buckets, int bucket_init_cap,
+                     int conn_buf_len) {
+    init_tcp_conn_table(&server->conn_table, n_buckets, bucket_init_cap);
+    init_write_queue(&server->w_queue, server, n_buckets, bucket_init_cap);
 
     int listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listen_fd < 0) {
@@ -135,25 +89,9 @@ struct tcp_server* new_tcp_server(int port, int max_clients, int n_buckets, int 
         LOG_FATAL("listen() failed errno=%d (%s)", errno, strerror(errno));
     }
 
-    server->conn_table = conn_table;
-    server->w_queue = w_queue;
     server->listen_fd = listen_fd;
     server->port = port;
     server->conn_buf_len = conn_buf_len;
-    server->cb_data = cb_data;
-    return server;
-}
-
-int tcp_server_get_fd(struct tcp_server* server) {
-    return server->listen_fd;
-}
-
-int tcp_server_get_port(struct tcp_server* server) {
-    return server->port;
-}
-
-struct write_queue* get_write_queue(struct tcp_server* server) {
-    return server->w_queue;
 }
 
 struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
@@ -196,7 +134,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     conn->ipv4 = ipv4;
     conn->port = port;
     conn->is_closed = 0;
-    if (tcp_conn_table_insert(server->conn_table, conn) < 0) {
+    if (tcp_conn_table_insert(&server->conn_table, conn) < 0) {
         LOG_ERROR("Failed to grow tcp connection table bucket");
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
@@ -206,7 +144,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         free(conn);
         return 0;
     }
-    if (write_queue_add_conn(server->w_queue, conn) < 0) {
+    if (write_queue_add_conn(&server->w_queue, conn) < 0) {
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
                       port, errno, strerror(errno));
@@ -259,8 +197,8 @@ void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     }
 
     tcp_conn_before_close_callback(server->cb_data, conn);
-    tcp_conn_table_erase(server->conn_table, conn);
-    write_queue_remove_conn(server->w_queue, conn);
+    tcp_conn_table_erase(&server->conn_table, conn);
+    write_queue_remove_conn(&server->w_queue, conn);
     // TODO: Fail and free leftover write tasks for this connection.
     LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
     tcp_conn_dec_refcount(conn);
@@ -273,7 +211,8 @@ void tcp_conn_inc_refcount(struct tcp_conn* conn) {
 void tcp_conn_dec_refcount(struct tcp_conn* conn) {
     int ref_cnt = atomic_fetch_sub_explicit(&conn->ref_count, 1, memory_order_acq_rel);
     if (ref_cnt == 1) {
-        LOG_DEBUG("Reclaiming memory and file descriptor for tcp connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
+        LOG_DEBUG("Reclaiming memory and file descriptor for tcp connection %s:%d (fd=%d)", ipv4_str(conn->ipv4),
+                  conn->port, conn->fd);
         if (close(conn->fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", conn->fd,
                       ipv4_str(conn->ipv4), conn->port, errno, strerror(errno));

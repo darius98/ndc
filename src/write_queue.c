@@ -9,36 +9,6 @@
 
 #include "logging.h"
 #include "tcp_server.h"
-#include "write_worker_loop.h"
-
-struct write_task {
-    int buf_crs;
-    int buf_len;
-    const char* buf;
-    void* cb_data;
-    write_task_cb cb;
-    struct write_task* next;
-};
-
-struct write_task_list {
-    int ref_count;
-    struct tcp_conn* conn;
-    struct write_task* head;
-    struct write_task* tail;
-};
-
-struct write_task_list_table_bucket {
-    int len;
-    int cap;
-    struct write_task_list** entries;
-};
-
-struct write_task_list_table {
-    pthread_mutex_t lock;
-    int size;
-    int n_buckets;
-    struct write_task_list_table_bucket* buckets;
-};
 
 static void init_tasks_list_table(struct write_task_list_table* table, int n_buckets, int bucket_init_cap) {
     table->size = 0;
@@ -146,29 +116,15 @@ static void release_task_list(struct write_task_list_table* table, struct write_
     }
 }
 
-struct write_queue {
-    struct tcp_server* tcp_server;
-    struct write_task_list_table task_lists;
-    pthread_mutex_t lock;
-    int worker_loop_notify_pipe[2];
-    struct write_worker_loop* worker_loop;
-    pthread_t worker;
-};
-
 static void* write_queue_worker(void* arg) {
     struct write_queue* queue = (struct write_queue*)arg;
-    write_worker_loop_run(queue->worker_loop, queue);
+    write_worker_loop_run(&queue->worker_loop, queue);
     return 0;
 }
 
-struct write_queue* new_write_queue(struct tcp_server* tcp_server, int task_lists_n_buckets,
+void init_write_queue(struct write_queue* queue, struct tcp_server* tcp_server, int task_lists_n_buckets,
                                     int task_lists_bucket_init_cap) {
-    struct write_queue* queue = malloc(sizeof(struct write_queue));
-    if (queue == 0) {
-        LOG_FATAL("Failed to allocate memory for write queue structure");
-    }
     queue->tcp_server = tcp_server;
-
     init_tasks_list_table(&queue->task_lists, task_lists_n_buckets, task_lists_bucket_init_cap);
     ASSERT_0(pthread_mutex_init(&queue->lock, 0));
     ASSERT_0(pipe(queue->worker_loop_notify_pipe));
@@ -182,13 +138,12 @@ struct write_queue* new_write_queue(struct tcp_server* tcp_server, int task_list
         LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
     }
     ASSERT_0(fcntl(queue->worker_loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK));
-    queue->worker_loop = new_write_worker_loop(queue->worker_loop_notify_pipe[0]);
+    init_write_worker_loop(&queue->worker_loop, queue->worker_loop_notify_pipe[0]);
     ASSERT_0(pthread_create(&queue->worker, 0, write_queue_worker, queue));
-    return queue;
 }
 
 int write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn) {
-    if (write_worker_loop_add_fd(queue->worker_loop, conn->fd) < 0) {
+    if (write_worker_loop_add_fd(&queue->worker_loop, conn->fd) < 0) {
         return -1;
     }
     if (add_task_list(&queue->task_lists, conn) < 0) {
