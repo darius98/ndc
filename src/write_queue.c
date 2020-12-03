@@ -109,6 +109,8 @@ static void remove_task_list(struct write_task_list_table* table, int fd) {
     }
     ASSERT_0(pthread_mutex_unlock(&table->lock));
     if (task_list != 0) {
+        LOG_DEBUG("Reclaiming memory for write_task_list for connection %s:%d (fd=%d)", ipv4_str(task_list->conn->ipv4),
+                  task_list->conn->port, task_list->conn->fd);
         tcp_conn_dec_refcount(task_list->conn);
         free(task_list);
     }
@@ -137,6 +139,8 @@ static void release_task_list(struct write_task_list_table* table, struct write_
     }
     ASSERT_0(pthread_mutex_unlock(&table->lock));
     if (task_list != 0) {
+        LOG_DEBUG("Reclaiming memory for write_task_list for connection %s:%d (fd=%d)", ipv4_str(task_list->conn->ipv4),
+                  task_list->conn->port, task_list->conn->fd);
         tcp_conn_dec_refcount(task_list->conn);
         free(task_list);
     }
@@ -290,6 +294,7 @@ void write_queue_process_writes(struct write_queue* queue, int fd) {
             LOG_ERROR("write() failed with errno=%d (%s)", errno, strerror(errno));
             write_queue_pop(queue, task_list, task, errno);
             close_tcp_conn(queue->tcp_server, task_list->conn);
+            break;
         } else if (chunk_sz > 0) {
             LOG_DEBUG("Wrote %d bytes to %s:%d", (int)chunk_sz, ipv4_str(task_list->conn->ipv4), task_list->conn->port);
             task->buf_crs += chunk_sz;
