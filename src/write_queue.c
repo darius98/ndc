@@ -81,6 +81,7 @@ static void remove_task_list(struct write_task_list_table* table, int fd) {
     if (task_list != 0) {
         LOG_DEBUG("Reclaiming memory for write_task_list for connection %s:%d (fd=%d)", ipv4_str(task_list->conn->ipv4),
                   task_list->conn->port, task_list->conn->fd);
+        // TODO: Fail and free leftover write tasks for this connection.
         tcp_conn_dec_refcount(task_list->conn);
         free(task_list);
     }
@@ -127,17 +128,17 @@ void init_write_queue(struct write_queue* queue, struct tcp_server* tcp_server, 
     queue->tcp_server = tcp_server;
     init_tasks_list_table(&queue->task_lists, task_lists_n_buckets, task_lists_bucket_init_cap);
     ASSERT_0(pthread_mutex_init(&queue->lock, 0));
-    ASSERT_0(pipe(queue->worker_loop_notify_pipe));
-    int prev_flags = fcntl(queue->worker_loop_notify_pipe[0], F_GETFD);
+    ASSERT_0(pipe(queue->loop_notify_pipe));
+    int prev_flags = fcntl(queue->loop_notify_pipe[0], F_GETFD);
     if (prev_flags < 0) {
         LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
     }
-    ASSERT_0(fcntl(queue->worker_loop_notify_pipe[0], F_SETFD, prev_flags | O_NONBLOCK));
-    prev_flags = fcntl(queue->worker_loop_notify_pipe[0], F_GETFD);
+    ASSERT_0(fcntl(queue->loop_notify_pipe[0], F_SETFD, prev_flags | O_NONBLOCK));
+    prev_flags = fcntl(queue->loop_notify_pipe[0], F_GETFD);
     if (prev_flags < 0) {
         LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
     }
-    ASSERT_0(fcntl(queue->worker_loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK));
+    ASSERT_0(fcntl(queue->loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK));
     init_write_loop(queue);
     ASSERT_0(pthread_create(&queue->worker, 0, write_queue_worker, queue));
 }
@@ -166,7 +167,7 @@ void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn) {
     notification.fd = conn->fd;
     notification.type = ww_notify_remove;
     // TODO: EH.
-    write(queue->worker_loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
+    write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
 }
 
 void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const char* buf, int buf_len, void* cb_data,
@@ -207,8 +208,7 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
     notification.fd = task_list->conn->fd;
     notification.type = ww_notify_execute;
     // TODO: EH.
-    write(queue->worker_loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
-
+    write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
     release_task_list(&queue->task_lists, task_list);
 }
 
@@ -265,7 +265,7 @@ void write_queue_process_writes(struct write_queue* queue, int fd) {
 void write_queue_process_notification(struct write_queue* queue) {
     struct write_worker_notification notification;
     errno = 0;
-    ssize_t n_bytes = read(queue->worker_loop_notify_pipe[0], &notification, sizeof(struct write_worker_notification));
+    ssize_t n_bytes = read(queue->loop_notify_pipe[0], &notification, sizeof(struct write_worker_notification));
     if (n_bytes != sizeof(struct write_worker_notification)) {
         LOG_FATAL(
             "Write worker loop: failed to read write_task_list pointer from notify pipe, returned %d, errno=%d "

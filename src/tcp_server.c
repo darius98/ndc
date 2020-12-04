@@ -71,6 +71,10 @@ void init_tcp_server(struct tcp_server* server, int port, int max_clients, int n
     init_tcp_conn_table(&server->conn_table, n_buckets, bucket_init_cap);
     init_write_queue(&server->w_queue, server, n_buckets, bucket_init_cap);
 
+    if (pipe(server->notify_pipe) < 0) {
+        LOG_FATAL("pipe() failed errno=%d (%s)", errno, strerror(errno));
+    }
+
     int listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listen_fd < 0) {
         LOG_FATAL("socket() failed errno=%d (%s)", errno, strerror(errno));
@@ -189,6 +193,12 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     return num_bytes;
 }
 
+struct tcp_server_notification {
+    enum
+    { ts_notify_close_conn, } type;
+    void* data;
+};
+
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     if (atomic_exchange_explicit(&conn->is_closed, 1, memory_order_acq_rel) == 1) {
         LOG_DEBUG("Trying to close TCP connection that is already closed %s:%d (fd=%d)", ipv4_str(conn->ipv4),
@@ -196,12 +206,29 @@ void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
         return;
     }
 
-    tcp_conn_before_close_callback(server->cb_data, conn);
-    tcp_conn_table_erase(&server->conn_table, conn);
-    write_queue_remove_conn(&server->w_queue, conn);
-    // TODO: Fail and free leftover write tasks for this connection.
-    LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
-    tcp_conn_dec_refcount(conn);
+    struct tcp_server_notification notification;
+    notification.type = ts_notify_close_conn;
+    notification.data = conn;
+    // TODO: EH.
+    write(server->notify_pipe[1], &notification, sizeof(struct tcp_server_notification));
+}
+
+void tcp_server_process_notification(struct tcp_server* server) {
+    struct tcp_server_notification notification;
+    errno = 0;
+    ssize_t n_bytes = read(server->notify_pipe[0], &notification, sizeof(struct tcp_server_notification));
+    if (n_bytes != sizeof(struct tcp_server_notification)) {
+        LOG_FATAL("TCP server: failed to read from notify pipe, returned %d, errno=%d (%s)", (int)n_bytes, errno,
+                  strerror(errno));
+    }
+    if (notification.type == ts_notify_close_conn) {
+        struct tcp_conn* conn = notification.data;
+        tcp_conn_before_close_callback(server->cb_data, conn);
+        tcp_conn_table_erase(&server->conn_table, conn);
+        write_queue_remove_conn(&server->w_queue, conn);
+        LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
+        tcp_conn_dec_refcount(conn);
+    }
 }
 
 void tcp_conn_inc_refcount(struct tcp_conn* conn) {

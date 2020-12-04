@@ -31,6 +31,7 @@ struct tcp_server {
     struct tcp_conn_table conn_table;
     struct write_queue w_queue;
     int listen_fd;
+    int notify_pipe[2];
     int port;
 
     int conn_buf_len;
@@ -53,6 +54,10 @@ void tcp_conn_inc_refcount(struct tcp_conn* conn);
 void tcp_conn_dec_refcount(struct tcp_conn* conn);
 
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
+
+void close_tcp_conn_internal(struct tcp_server* server, struct tcp_conn* conn);
+
+void tcp_server_process_notification(struct tcp_server* server);
 
 void run_tcp_server_loop(struct tcp_server* server);
 

@@ -41,7 +41,7 @@ struct write_queue {
     struct tcp_server* tcp_server;
     struct write_task_list_table task_lists;
     pthread_mutex_t lock;
-    int worker_loop_notify_pipe[2];
+    int loop_notify_pipe[2];
     int loop_fd;
     pthread_t worker;
 };

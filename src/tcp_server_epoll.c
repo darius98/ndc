@@ -15,7 +15,12 @@ void run_tcp_server_loop(struct tcp_server *server) {
     struct epoll_event event;
     event.events = EPOLLIN;
     event.data.fd = server->listen_fd;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server->listen_fd, &event) < 0 && errno != EINTR) {
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server->listen_fd, &event) < 0) {
+        LOG_FATAL("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, strerror(errno));
+    }
+    event.events = EPOLLIN;
+    event.data.fd = server->notify_pipe[0];
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server->notify_pipe[0], &event) < 0) {
         LOG_FATAL("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, strerror(errno));
     }
 
@@ -50,6 +55,8 @@ void run_tcp_server_loop(struct tcp_server *server) {
                     close_tcp_conn(server, conn);
                 }
             }
+        } else if (event_fd == server->notify_pipe[0]) {
+            tcp_server_process_notification(server);
         } else {
             conn = find_tcp_conn(server, event_fd);
             if (conn == 0) {

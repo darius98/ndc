@@ -17,6 +17,10 @@ void run_tcp_server_loop(struct tcp_server *server) {
     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
         LOG_FATAL("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, strerror(errno));
     }
+    EV_SET(&event, server->notify_pipe[0], EVFILT_READ, EV_ADD, 0, 0, 0);
+    if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
+        LOG_FATAL("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, strerror(errno));
+    }
 
     LOG_INFO("Running HTTP server on port %d", server->port);
 
@@ -48,6 +52,8 @@ void run_tcp_server_loop(struct tcp_server *server) {
                     close_tcp_conn(server, conn);
                 }
             }
+        } else if (event_fd == server->notify_pipe[0]) {
+            tcp_server_process_notification(server);
         } else {
             conn = (struct tcp_conn *)event.udata;
             if (event.flags & EV_EOF) {

@@ -16,8 +16,8 @@ void init_write_loop(struct write_queue* queue) {
     }
     struct epoll_event event;
     event.events = EPOLLIN;
-    event.data.fd = queue->worker_loop_notify_pipe[0];
-    if (epoll_ctl(queue->loop_fd, EPOLL_CTL_ADD, queue->worker_loop_notify_pipe[0], &event) < 0 && errno != EINTR) {
+    event.data.fd = queue->loop_notify_pipe[0];
+    if (epoll_ctl(queue->loop_fd, EPOLL_CTL_ADD, queue->loop_notify_pipe[0], &event) < 0 && errno != EINTR) {
         LOG_FATAL("Failed to attach notify pipe to write worker loop, epoll_ctl() failed errno=%d (%s)", errno,
                   strerror(errno));
     }
@@ -41,7 +41,7 @@ void run_write_loop(struct write_queue* queue) {
             LOG_ERROR("Write worker loop: epoll_wait() returned %d events when capacity was 1.", n_ev);
         }
         int event_fd = (int)event.data.fd;
-        if (event_fd == queue->worker_loop_notify_pipe[0]) {
+        if (event_fd == queue->loop_notify_pipe[0]) {
             write_queue_process_notification(queue);
         } else {
             write_queue_process_writes(queue, event_fd);
