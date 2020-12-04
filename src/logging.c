@@ -51,7 +51,6 @@ void init_logging(int log_filename_and_lineno, int min_level) {
     signal(SIGFPE, handle_signal_log_fatal);
     signal(SIGHUP, handle_signal_log_fatal);
     signal(SIGILL, handle_signal_log_fatal);
-    signal(SIGPIPE, handle_signal_log_fatal);
     signal(SIGINT, handle_signal_log_fatal);
     signal(SIGQUIT, handle_signal_log_fatal);
     signal(SIGSEGV, handle_signal_log_fatal);

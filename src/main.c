@@ -4,7 +4,12 @@
 #include "static_file_server.h"
 #include "tcp_server.h"
 
+#include <signal.h>
+
 int main() {
+    // Ignore sigpipe, since we handle broken pipe errors in code.
+    signal(SIGPIPE, SIG_IGN);
+
     init_logging(1, 0);
 
     struct file_cache file_cache;
