@@ -149,6 +149,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         return 0;
     }
     if (write_queue_add_conn(&server->w_queue, conn) < 0) {
+        tcp_conn_table_erase(&server->conn_table, conn);
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
                       port, errno, strerror(errno));
@@ -158,6 +159,8 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         return 0;
     }
     if (tcp_conn_after_open_callback(server->cb_data, conn) < 0) {
+        tcp_conn_table_erase(&server->conn_table, conn);
+        write_queue_remove_conn(&server->w_queue, conn);
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
                       port, errno, strerror(errno));
