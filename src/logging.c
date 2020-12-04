@@ -14,7 +14,7 @@ static struct {
     int log_filename_and_lineno;
     pthread_mutex_t lock;
     char level_name[5];
-    char tm_buffer[22];  // Format is [YYYY-MM-DD HH:mm:ss], of length 21
+    char tm_buffer[21];  // Format is [YYYY-MM-DD HH:mm:ss, of length 20
     char ipv4_str_buf[INET_ADDRSTRLEN];
 } logging;
 
@@ -43,7 +43,7 @@ void init_logging(int log_filename_and_lineno, int min_level) {
     logging.level_name[LOG_LEVEL_WARN] = 'W';
     logging.level_name[LOG_LEVEL_ERROR] = 'E';
     logging.level_name[LOG_LEVEL_FATAL] = 'F';
-    logging.tm_buffer[21] = 0;
+    logging.tm_buffer[20] = 0;
     logging.ipv4_str_buf[INET_ADDRSTRLEN - 1] = 0;
 
     // Install signal handlers
@@ -81,10 +81,10 @@ void internal_log_unlock() {
 }
 
 void internal_log_message(const char* filename, int lineno, int level, const char* fmt, ...) {
-    time_t timestamp;
-    time(&timestamp);
-    strftime(logging.tm_buffer, 21, "[%F %T]", gmtime(&timestamp));
-    fprintf(stderr, "%s %c ", logging.tm_buffer, logging.level_name[level]);
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    strftime(logging.tm_buffer, 20, "[%F %T", gmtime(&now.tv_sec));
+    fprintf(stderr, "%s.%03ld] %c ", logging.tm_buffer, now.tv_nsec / 1000000, logging.level_name[level]);
     if (logging.log_filename_and_lineno != 0 && filename != 0) {
         fprintf(stderr, "(%s:%d) ", filename, lineno);
     }
