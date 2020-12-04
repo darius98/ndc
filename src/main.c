@@ -1,10 +1,10 @@
+#include <signal.h>
+
 #include "file_cache.h"
 #include "http_server.h"
 #include "logging.h"
 #include "static_file_server.h"
 #include "tcp_server.h"
-
-#include <signal.h>
 
 int main() {
     // Ignore sigpipe, since we handle broken pipe errors in code.
@@ -16,7 +16,7 @@ int main() {
     init_file_cache(&file_cache, 23, 4);
 
     struct tcp_server tcp_server;
-    init_tcp_server(&tcp_server, 1337, 2048, 23, 4, 65536);
+    init_tcp_server(&tcp_server, 1337, 2048, 23, 4, 65536, 2048);
 
     struct http_server http_server;
     init_http_server(&http_server, 65536, 1);

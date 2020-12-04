@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/event.h>
 
@@ -20,9 +21,13 @@ void init_write_loop(struct write_queue* queue) {
 }
 
 void run_write_loop(struct write_queue* queue) {
-    struct kevent event;
+    struct kevent* events = malloc(sizeof(struct kevent) * queue->loop_max_events);
+    if (events == 0) {
+        LOG_FATAL("Failed to allocate %d kevents for the write loop (malloc failed for %zu bytes)",
+                  queue->loop_max_events, sizeof(struct kevent) * queue->loop_max_events);
+    }
     while (1) {
-        int n_ev = kevent(queue->loop_fd, 0, 0, &event, 1, 0);
+        int n_ev = kevent(queue->loop_fd, 0, 0, events, queue->loop_max_events, 0);
         if (n_ev < 0) {
             // TODO: Handle error better.
             LOG_FATAL("Write worker loop: kevent() failed errno=%d (%s)", errno, strerror(errno));
@@ -33,14 +38,13 @@ void run_write_loop(struct write_queue* queue) {
             continue;
         }
 
-        if (n_ev != 1) {
-            LOG_ERROR("Write worker loop: kevent() returned %d events when capacity was 1.", n_ev);
-        }
-        int event_fd = (int)event.ident;
-        if (event_fd == queue->loop_notify_pipe[0]) {
-            write_queue_process_notification(queue);
-        } else {
-            write_queue_process_writes(queue, event_fd);
+        for (int i = 0; i < n_ev; i++) {
+            int event_fd = (int)events[i].ident;
+            if (event_fd == queue->loop_notify_pipe[0]) {
+                write_queue_process_notification(queue);
+            } else {
+                write_queue_process_writes(queue, event_fd);
+            }
         }
     }
 }

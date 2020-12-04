@@ -67,9 +67,9 @@ struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
 }
 
 void init_tcp_server(struct tcp_server* server, int port, int max_clients, int n_buckets, int bucket_init_cap,
-                     int conn_buf_len) {
+                     int conn_buf_len, int write_queue_max_events) {
     init_tcp_conn_table(&server->conn_table, n_buckets, bucket_init_cap);
-    init_write_queue(&server->w_queue, server, n_buckets, bucket_init_cap);
+    init_write_queue(&server->w_queue, server, n_buckets, bucket_init_cap, write_queue_max_events);
 
     if (pipe(server->notify_pipe) < 0) {
         LOG_FATAL("pipe() failed errno=%d (%s)", errno, strerror(errno));

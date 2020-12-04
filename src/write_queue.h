@@ -43,11 +43,12 @@ struct write_queue {
     pthread_mutex_t lock;
     int loop_notify_pipe[2];
     int loop_fd;
+    int loop_max_events;
     pthread_t worker;
 };
 
 void init_write_queue(struct write_queue* queue, struct tcp_server* tcp_server, int task_lists_n_buckets,
-                      int task_lists_bucket_init_cap);
+                      int task_lists_bucket_init_cap, int loop_max_events);
 
 int write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn);
 

@@ -41,7 +41,7 @@ struct tcp_server {
 
 /// Initialize a TCP server. Note: Aborts on failure.
 void init_tcp_server(struct tcp_server* server, int port, int max_clients, int n_buckets, int bucket_init_cap,
-                     int conn_buf_len);
+                     int conn_buf_len, int write_queue_max_events);
 
 struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 

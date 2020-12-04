@@ -24,9 +24,13 @@ void init_write_loop(struct write_queue* queue) {
 }
 
 void run_write_loop(struct write_queue* queue) {
-    struct epoll_event event;
+    struct epoll_event* events = malloc(sizeof(struct epoll_event) * queue->loop_max_events);
+    if (events == 0) {
+        LOG_FATAL("Failed to allocate %d epoll_events for the write loop (malloc failed for %zu bytes)",
+                  queue->loop_max_events, sizeof(struct epoll_event) * queue->loop_max_events);
+    }
     while (1) {
-        int n_ev = epoll_wait(queue->loop_fd, &event, 1, -1);
+        int n_ev = epoll_wait(queue->loop_fd, events, queue->loop_max_events, -1);
         if (n_ev < 0) {
             // TODO: Handle error better.
             LOG_FATAL("Write worker loop: epoll_wait() failed errno=%d (%s)", errno, strerror(errno));
@@ -37,14 +41,13 @@ void run_write_loop(struct write_queue* queue) {
             continue;
         }
 
-        if (n_ev != 1) {
-            LOG_ERROR("Write worker loop: epoll_wait() returned %d events when capacity was 1.", n_ev);
-        }
-        int event_fd = (int)event.data.fd;
-        if (event_fd == queue->loop_notify_pipe[0]) {
-            write_queue_process_notification(queue);
-        } else {
-            write_queue_process_writes(queue, event_fd);
+        for (int i = 0; i < n_ev; i++) {
+            int event_fd = (int)events[i].data.fd;
+            if (event_fd == queue->loop_notify_pipe[0]) {
+                write_queue_process_notification(queue);
+            } else {
+                write_queue_process_writes(queue, event_fd);
+            }
         }
     }
 }
