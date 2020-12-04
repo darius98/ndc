@@ -6,7 +6,7 @@
 #include "logging.h"
 #include "tcp_server.h"
 
-void run_tcp_server_loop(struct tcp_server *server) {
+void run_tcp_server_loop(struct tcp_server *server, int max_events) {
     int epoll_fd = epoll_create1(0);
     if (epoll_fd < 0) {
         LOG_FATAL("Failed to start server: epoll_create1() failed errno=%d (%s)", errno, strerror(errno));
@@ -24,6 +24,12 @@ void run_tcp_server_loop(struct tcp_server *server) {
         LOG_FATAL("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, strerror(errno));
     }
 
+    struct epoll_event *events = malloc(sizeof(struct epoll_event) * max_events);
+    if (events == 0) {
+        LOG_FATAL("Failed to start TCP server: failed to allocate %d epoll_events (malloc failed %zu bytes)",
+                  max_events, sizeof(struct epoll_event) * max_events);
+    }
+
     LOG_INFO("Running HTTP server on port %d", server->port);
 
     struct tcp_conn *conn;
@@ -39,38 +45,38 @@ void run_tcp_server_loop(struct tcp_server *server) {
             continue;
         }
 
-        if (n_ev != 1) {
-            LOG_ERROR("Server: epoll_wait() returned %d events when capacity was 1.", n_ev);
-        }
-        int event_fd = (int)event.data.fd;
-        if (event_fd == server->listen_fd) {
-            LOG_DEBUG("Received epoll event on TCP server socket (fd=%d)", server->listen_fd);
-            conn = accept_tcp_conn(server);
-            if (conn != 0) {
-                event.events = EPOLLIN | EPOLLET;
-                event.data.fd = conn->fd;
-                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn->fd, &event) < 0) {
-                    LOG_ERROR("Could not accept TCP connection from %s:%d (fd=%d), epoll_ctl() failed errno=%d (%s)",
-                              ipv4_str(conn->ipv4), conn->port, conn->fd, errno, strerror(errno));
-                    close_tcp_conn(server, conn);
-                }
-            }
-        } else if (event_fd == server->notify_pipe[0]) {
-            tcp_server_process_notification(server);
-        } else {
-            conn = find_tcp_conn(server, event_fd);
-            if (conn == 0) {
-                LOG_WARN("Received epoll event on fd=%d, but could not find connection", event_fd);
-            } else {
-                LOG_DEBUG("Received epoll event on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
-                          conn->fd);
-                int n_bytes = recv_from_tcp_conn(server, conn);
-                if (n_bytes <= 0) {
-                    if (n_bytes < 0) {
-                        LOG_ERROR("Closing TCP connection to %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
-                                  conn->fd);
+        for (int i = 0; i < n_ev; i++) {
+            int event_fd = (int)events[i].data.fd;
+            if (event_fd == server->listen_fd) {
+                LOG_DEBUG("Received epoll event on TCP server socket (fd=%d)", server->listen_fd);
+                conn = accept_tcp_conn(server);
+                if (conn != 0) {
+                    event.events = EPOLLIN | EPOLLET;
+                    event.data.fd = conn->fd;
+                    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn->fd, &event) < 0) {
+                        LOG_ERROR(
+                            "Could not accept TCP connection from %s:%d (fd=%d), epoll_ctl() failed errno=%d (%s)",
+                            ipv4_str(conn->ipv4), conn->port, conn->fd, errno, strerror(errno));
+                        close_tcp_conn(server, conn);
                     }
-                    close_tcp_conn(server, conn);
+                }
+            } else if (event_fd == server->notify_pipe[0]) {
+                tcp_server_process_notification(server);
+            } else {
+                conn = find_tcp_conn(server, event_fd);
+                if (conn == 0) {
+                    LOG_WARN("Received epoll event on fd=%d, but could not find connection", event_fd);
+                } else {
+                    LOG_DEBUG("Received epoll event on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
+                              conn->fd);
+                    int n_bytes = recv_from_tcp_conn(server, conn);
+                    if (n_bytes <= 0) {
+                        if (n_bytes < 0) {
+                            LOG_ERROR("Closing TCP connection to %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
+                                      conn->fd);
+                        }
+                        close_tcp_conn(server, conn);
+                    }
                 }
             }
         }

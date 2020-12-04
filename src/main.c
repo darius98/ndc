@@ -26,6 +26,6 @@ int main() {
     init_static_file_server(&static_file_server, &file_cache, &tcp_server, "./");
     http_server.cb_data = &static_file_server;
 
-    run_tcp_server_loop(&tcp_server);
+    run_tcp_server_loop(&tcp_server, 2048);
     return 0;
 }
