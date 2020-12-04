@@ -6,24 +6,23 @@
 #include "tcp_server.h"
 #include "write_queue.h"
 
-void init_write_worker_loop(struct write_worker_loop* loop, int notify_fd) {
-    loop->loop_fd = kqueue();
-    if (loop->loop_fd < 0) {
+void init_write_loop(struct write_queue* queue) {
+    queue->loop_fd = kqueue();
+    if (queue->loop_fd < 0) {
         LOG_FATAL("Failed to initialize write worker loop, kqueue() failed errno=%d (%s)", errno, strerror(errno));
     }
-    loop->notify_fd = notify_fd;
     struct kevent ev;
-    EV_SET(&ev, notify_fd, EVFILT_READ, EV_ADD, 0, 0, 0);
-    if (kevent(loop->loop_fd, &ev, 1, 0, 0, 0) < 0) {
+    EV_SET(&ev, queue->worker_loop_notify_pipe[0], EVFILT_READ, EV_ADD, 0, 0, 0);
+    if (kevent(queue->loop_fd, &ev, 1, 0, 0, 0) < 0) {
         LOG_FATAL("Failed to attach notify pipe to write worker loop, kevent() failed errno=%d (%s)", errno,
                   strerror(errno));
     }
 }
 
-void write_worker_loop_run(struct write_worker_loop* loop, struct write_queue* write_queue) {
+void run_write_loop(struct write_queue* queue) {
     struct kevent event;
     while (1) {
-        int n_ev = kevent(loop->loop_fd, 0, 0, &event, 1, 0);
+        int n_ev = kevent(queue->loop_fd, 0, 0, &event, 1, 0);
         if (n_ev < 0) {
             // TODO: Handle error better.
             LOG_FATAL("Write worker loop: kevent() failed errno=%d (%s)", errno, strerror(errno));
@@ -38,18 +37,18 @@ void write_worker_loop_run(struct write_worker_loop* loop, struct write_queue* w
             LOG_ERROR("Write worker loop: kevent() returned %d events when capacity was 1.", n_ev);
         }
         int event_fd = (int)event.ident;
-        if (event_fd == loop->notify_fd) {
-            write_queue_process_notification(write_queue);
+        if (event_fd == queue->worker_loop_notify_pipe[0]) {
+            write_queue_process_notification(queue);
         } else {
-            write_queue_process_writes(write_queue, event_fd);
+            write_queue_process_writes(queue, event_fd);
         }
     }
 }
 
-int write_worker_loop_add_fd(struct write_worker_loop* loop, int fd) {
+int write_loop_add_fd(struct write_queue* queue, int fd) {
     struct kevent ev;
     EV_SET(&ev, fd, EVFILT_WRITE, EV_ADD, 0, 0, 0);
-    if (kevent(loop->loop_fd, &ev, 1, 0, 0, 0) < 0) {
+    if (kevent(queue->loop_fd, &ev, 1, 0, 0, 0) < 0) {
         LOG_ERROR("kevent() failed errno=%d (%s)", errno, strerror(errno));
         return -1;
     }

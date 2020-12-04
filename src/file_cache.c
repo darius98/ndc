@@ -126,7 +126,7 @@ static struct mapped_file* map_file(char* path) {
     return file;
 }
 
-void unmap_file(struct mapped_file* file) {
+static void unmap_file(struct mapped_file* file) {
     if (close(file->fd) < 0) {
         LOG_ERROR("Error closing file %s: close() failed errno=%d (%s)", file->path, errno, strerror(errno));
     }

@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <execinfo.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,7 +48,6 @@ void init_logging(int log_filename_and_lineno, int min_level) {
 
     // Install signal handlers
     signal(SIGBUS, handle_signal_log_fatal);
-    signal(SIGEMT, handle_signal_log_fatal);
     signal(SIGFPE, handle_signal_log_fatal);
     signal(SIGHUP, handle_signal_log_fatal);
     signal(SIGILL, handle_signal_log_fatal);

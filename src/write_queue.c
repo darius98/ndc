@@ -118,7 +118,7 @@ static void release_task_list(struct write_task_list_table* table, struct write_
 
 static void* write_queue_worker(void* arg) {
     struct write_queue* queue = (struct write_queue*)arg;
-    write_worker_loop_run(&queue->worker_loop, queue);
+    run_write_loop(queue);
     return 0;
 }
 
@@ -138,12 +138,12 @@ void init_write_queue(struct write_queue* queue, struct tcp_server* tcp_server, 
         LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
     }
     ASSERT_0(fcntl(queue->worker_loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK));
-    init_write_worker_loop(&queue->worker_loop, queue->worker_loop_notify_pipe[0]);
+    init_write_loop(queue);
     ASSERT_0(pthread_create(&queue->worker, 0, write_queue_worker, queue));
 }
 
 int write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn) {
-    if (write_worker_loop_add_fd(&queue->worker_loop, conn->fd) < 0) {
+    if (write_loop_add_fd(queue, conn->fd) < 0) {
         return -1;
     }
     if (add_task_list(&queue->task_lists, conn) < 0) {

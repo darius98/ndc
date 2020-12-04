@@ -37,17 +37,12 @@ struct write_task_list_table {
     struct write_task_list_table_bucket* buckets;
 };
 
-struct write_worker_loop {
-    int loop_fd;
-    int notify_fd;
-};
-
 struct write_queue {
     struct tcp_server* tcp_server;
     struct write_task_list_table task_lists;
     pthread_mutex_t lock;
     int worker_loop_notify_pipe[2];
-    struct write_worker_loop worker_loop;
+    int loop_fd;
     pthread_t worker;
 };
 
@@ -66,10 +61,10 @@ void write_queue_process_writes(struct write_queue* queue, int fd);
 void write_queue_process_notification(struct write_queue* queue);
 
 /// Initialize a new write_worker_loop. Note: Aborts on failure.
-void init_write_worker_loop(struct write_worker_loop* loop, int notify_fd);
+void init_write_loop(struct write_queue* queue);
 
-void write_worker_loop_run(struct write_worker_loop* loop, struct write_queue* write_queue);
+void run_write_loop(struct write_queue* queue);
 
-int write_worker_loop_add_fd(struct write_worker_loop* loop, int fd);
+int write_loop_add_fd(struct write_queue* queue, int fd);
 
 #endif
