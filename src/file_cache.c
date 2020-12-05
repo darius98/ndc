@@ -10,17 +10,17 @@
 
 #include "logging.h"
 
-void init_file_cache(struct file_cache* cache, int n_buckets, int bucket_init_cap) {
+void init_file_cache(struct file_cache* cache, struct file_cache_conf* conf) {
     ASSERT_0(pthread_mutex_init(&cache->lock, 0));
     cache->size = 0;
-    cache->n_buckets = n_buckets;
-    cache->buckets = malloc(sizeof(struct file_cache_bucket) * n_buckets);
+    cache->n_buckets = conf->num_buckets;
+    cache->buckets = malloc(sizeof(struct file_cache_bucket) * conf->num_buckets);
     if (cache->buckets == 0) {
         LOG_FATAL("Failed to allocate buckets array for file cache.");
     }
     for (int i = 0; i < cache->n_buckets; i++) {
         cache->buckets[i].size = 0;
-        cache->buckets[i].cap = bucket_init_cap;
+        cache->buckets[i].cap = conf->bucket_initial_capacity;
         cache->buckets[i].entries = malloc(sizeof(void*) * cache->buckets[i].cap);
         if (cache->buckets[i].entries == 0) {
             LOG_FATAL("Failed to allocate entries array for bucket %d of the file cache.", i);

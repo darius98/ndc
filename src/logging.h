@@ -1,13 +1,15 @@
 #ifndef NDC_LOGGING_H_
 #define NDC_LOGGING_H_
 
+#include "conf.h"
+
 #define LOG_LEVEL_DEBUG 0
 #define LOG_LEVEL_INFO 1
 #define LOG_LEVEL_WARN 2
 #define LOG_LEVEL_ERROR 3
 #define LOG_LEVEL_FATAL 4
 
-void init_logging(int log_filename_and_lineno, int min_level);
+void init_logging(const struct logging_conf* conf);
 
 int internal_log_min_level();
 

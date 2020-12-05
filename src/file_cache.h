@@ -1,6 +1,8 @@
 #ifndef NDC_FILE_CACHE_H_
 #define NDC_FILE_CACHE_H_
 
+#include "conf.h"
+
 #include <pthread.h>
 
 struct mapped_file {
@@ -27,7 +29,7 @@ struct file_cache {
 };
 
 /// Initialize a new file cache. Note: Aborts on failure.
-void init_file_cache(struct file_cache* cache, int n_buckets, int bucket_init_cap);
+void init_file_cache(struct file_cache* cache, struct file_cache_conf* conf);
 
 /// Note: Takes ownership of path.
 struct mapped_file* open_file(struct file_cache* cache, char* path);

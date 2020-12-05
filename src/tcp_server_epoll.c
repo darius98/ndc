@@ -6,7 +6,7 @@
 #include "logging.h"
 #include "tcp_server.h"
 
-void run_tcp_server_loop(struct tcp_server *server, int max_events) {
+void run_tcp_server_loop(struct tcp_server *server) {
     int epoll_fd = epoll_create1(0);
     if (epoll_fd < 0) {
         LOG_FATAL("Failed to start server: epoll_create1() failed errno=%d (%s)", errno, strerror(errno));
@@ -24,10 +24,10 @@ void run_tcp_server_loop(struct tcp_server *server, int max_events) {
         LOG_FATAL("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, strerror(errno));
     }
 
-    struct epoll_event *events = malloc(sizeof(struct epoll_event) * max_events);
+    struct epoll_event *events = malloc(sizeof(struct epoll_event) * server->conf->events_batch_size);
     if (events == 0) {
         LOG_FATAL("Failed to start TCP server: failed to allocate %d epoll_events (malloc failed %zu bytes)",
-                  max_events, sizeof(struct epoll_event) * max_events);
+                  server->conf->events_batch_size, sizeof(struct epoll_event) * server->conf->events_batch_size);
     }
 
     LOG_INFO("Running HTTP server on port %d", server->port);

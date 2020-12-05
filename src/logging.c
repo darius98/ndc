@@ -30,9 +30,9 @@ static void handle_signal_log_fatal(int sig) {
     exit(128 + sig);
 }
 
-void init_logging(int log_filename_and_lineno, int min_level) {
-    logging.min_level = min_level;
-    logging.log_filename_and_lineno = log_filename_and_lineno;
+void init_logging(const struct logging_conf* conf) {
+    logging.min_level = conf->min_level;
+    logging.log_filename_and_lineno = conf->filename_and_lineno;
     int err = pthread_mutex_init(&logging.lock, 0);
     if (err != 0) {
         fprintf(stderr, "Failed to initialize logging mutex: pthread_mutex_init() error=%d\n", err);

@@ -152,11 +152,10 @@ static void* write_queue_worker(void* arg) {
     return 0;
 }
 
-void init_write_queue(struct write_queue* queue, struct tcp_server* tcp_server, int task_lists_n_buckets,
-                      int task_lists_bucket_init_cap, int loop_max_events) {
+void init_write_queue(struct write_queue* queue, struct tcp_write_queue_conf* conf, struct tcp_server* tcp_server) {
     queue->tcp_server = tcp_server;
-    queue->loop_max_events = loop_max_events;
-    init_tasks_list_table(&queue->task_lists, task_lists_n_buckets, task_lists_bucket_init_cap);
+    queue->loop_max_events = conf->events_batch_size;
+    init_tasks_list_table(&queue->task_lists, conf->num_buckets, conf->bucket_initial_capacity);
     ASSERT_0(pthread_mutex_init(&queue->lock, 0));
     ASSERT_0(pipe(queue->loop_notify_pipe));
     int prev_flags = fcntl(queue->loop_notify_pipe[0], F_GETFD);

@@ -1,6 +1,8 @@
 #ifndef NDC_WRITE_SERVER_H_
 #define NDC_WRITE_SERVER_H_
 
+#include "conf.h"
+
 #include <pthread.h>
 
 struct tcp_server;
@@ -47,8 +49,7 @@ struct write_queue {
     pthread_t worker;
 };
 
-void init_write_queue(struct write_queue* queue, struct tcp_server* tcp_server, int task_lists_n_buckets,
-                      int task_lists_bucket_init_cap, int loop_max_events);
+void init_write_queue(struct write_queue* queue, struct tcp_write_queue_conf* conf, struct tcp_server* tcp_server);
 
 int write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn);
 

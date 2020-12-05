@@ -7,7 +7,7 @@
 #include "logging.h"
 #include "tcp_server.h"
 
-void run_tcp_server_loop(struct tcp_server *server, int max_events) {
+void run_tcp_server_loop(struct tcp_server *server) {
     int kqueue_fd = kqueue();
     if (kqueue_fd < 0) {
         LOG_FATAL("Failed to start TCP server: kqueue() failed errno=%d (%s)", errno, strerror(errno));
@@ -23,17 +23,17 @@ void run_tcp_server_loop(struct tcp_server *server, int max_events) {
         LOG_FATAL("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, strerror(errno));
     }
 
-    struct kevent *events = malloc(sizeof(struct kevent) * max_events);
+    struct kevent *events = malloc(sizeof(struct kevent) * server->conf->events_batch_size);
     if (events == 0) {
-        LOG_FATAL("Failed to start TCP server: failed to allocate %d kevents (malloc failed %zu bytes)", max_events,
-                  sizeof(struct kevent) * max_events);
+        LOG_FATAL("Failed to start TCP server: failed to allocate %d kevents (malloc failed %zu bytes)",
+                  server->conf->events_batch_size, sizeof(struct kevent) * server->conf->events_batch_size);
     }
 
     LOG_INFO("Running HTTP server on port %d", server->port);
 
     struct tcp_conn *conn;
     while (1) {
-        int n_ev = kevent(kqueue_fd, 0, 0, events, max_events, 0);
+        int n_ev = kevent(kqueue_fd, 0, 0, events, server->conf->events_batch_size, 0);
         if (n_ev < 0) {
             // TODO: Handle error better.
             LOG_FATAL("Server: kevent() failed errno=%d (%s)", errno, strerror(errno));
@@ -82,8 +82,8 @@ void run_tcp_server_loop(struct tcp_server *server, int max_events) {
                         }
                     }
                 } else {
-                    LOG_ERROR("Received unexpected event from kevent() fd=%d, event.flags=%d, event.filter=%u", event_fd,
-                              events[i].flags, events[i].filter);
+                    LOG_ERROR("Received unexpected event from kevent() fd=%d, event.flags=%d, event.filter=%u",
+                              event_fd, events[i].flags, events[i].filter);
                 }
             }
         }

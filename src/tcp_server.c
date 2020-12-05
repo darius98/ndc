@@ -66,17 +66,19 @@ struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
     return 0;
 }
 
-void init_tcp_server(struct tcp_server* server, int port, int max_clients, int n_buckets, int bucket_init_cap,
-                     int conn_buf_len, int write_queue_max_events) {
-    init_tcp_conn_table(&server->conn_table, n_buckets, bucket_init_cap);
-    init_write_queue(&server->w_queue, server, n_buckets, bucket_init_cap, write_queue_max_events);
+void init_tcp_server(struct tcp_server* server, int port, struct tcp_server_conf* conf,
+                     struct tcp_write_queue_conf* w_queue_conf) {
+    init_tcp_conn_table(&server->conn_table, conf->num_buckets, conf->bucket_initial_capacity);
+    init_write_queue(&server->w_queue, w_queue_conf, server);
+    server->conf = conf;
+    server->port = port;
 
     if (pipe(server->notify_pipe) < 0) {
         LOG_FATAL("pipe() failed errno=%d (%s)", errno, strerror(errno));
     }
 
-    int listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (listen_fd < 0) {
+    server->listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (server->listen_fd < 0) {
         LOG_FATAL("socket() failed errno=%d (%s)", errno, strerror(errno));
     }
 
@@ -85,17 +87,13 @@ void init_tcp_server(struct tcp_server* server, int port, int max_clients, int n
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(port);
-    if (bind(listen_fd, (const struct sockaddr*)&server_addr, sizeof(struct sockaddr_in)) < 0) {
+    if (bind(server->listen_fd, (const struct sockaddr*)&server_addr, sizeof(struct sockaddr_in)) < 0) {
         LOG_FATAL("bind() failed errno=%d (%s)", errno, strerror(errno));
     }
 
-    if (listen(listen_fd, max_clients) < 0) {
+    if (listen(server->listen_fd, conf->backlog) < 0) {
         LOG_FATAL("listen() failed errno=%d (%s)", errno, strerror(errno));
     }
-
-    server->listen_fd = listen_fd;
-    server->port = port;
-    server->conn_buf_len = conn_buf_len;
 }
 
 struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
@@ -123,7 +121,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     atomic_store_explicit(&conn->ref_count, 1, memory_order_release);
     conn->fd = fd;
     conn->buf_len = 0;
-    conn->buf_cap = server->conn_buf_len;
+    conn->buf_cap = server->conf->connection_buffer_size;
     conn->buf = malloc(conn->buf_cap + 1);
     if (conn->buf == 0) {
         LOG_ERROR("Failed to allocate buffer for new connection: %s:%d", ipv4_str(ipv4), port);

@@ -1,6 +1,7 @@
 #ifndef NDC_TCP_SERVER_H_
 #define NDC_TCP_SERVER_H_
 
+#include "conf.h"
 #include "write_queue.h"
 
 struct tcp_conn {
@@ -30,18 +31,16 @@ struct tcp_conn_table {
 struct tcp_server {
     struct tcp_conn_table conn_table;
     struct write_queue w_queue;
+    struct tcp_server_conf* conf;
     int listen_fd;
     int notify_pipe[2];
     int port;
-
-    int conn_buf_len;
-
     void* cb_data;
 };
 
 /// Initialize a TCP server. Note: Aborts on failure.
-void init_tcp_server(struct tcp_server* server, int port, int max_clients, int n_buckets, int bucket_init_cap,
-                     int conn_buf_len, int write_queue_max_events);
+void init_tcp_server(struct tcp_server* server, int port, struct tcp_server_conf* conf,
+                     struct tcp_write_queue_conf* w_queue_conf);
 
 struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 
@@ -57,7 +56,7 @@ void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
 
 void tcp_server_process_notification(struct tcp_server* server);
 
-void run_tcp_server_loop(struct tcp_server* server, int max_events);
+void run_tcp_server_loop(struct tcp_server* server);
 
 // These callbacks are not implemented in the TCP server.
 

@@ -1,7 +1,6 @@
 #include "http_server.h"
 
 #include <ctype.h>
-#include <pthread.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,19 +53,19 @@ static void* http_worker(void* arg) {
     return 0;
 }
 
-void init_http_server(struct http_server* server, int req_buf_cap, int num_workers) {
+void init_http_server(struct http_server* server, const struct http_conf* conf) {
     server->head = 0;
     server->tail = 0;
-    server->req_buf_cap = req_buf_cap;
+    server->req_buf_cap = conf->request_buffer_size;
     ASSERT_0(pthread_mutex_init(&server->lock, 0));
     ASSERT_0(pthread_cond_init(&server->cond_var, 0));
     atomic_store_explicit(&server->stopped, 0, memory_order_release);
-    server->num_workers = num_workers;
-    server->workers = malloc(num_workers * sizeof(pthread_t));
+    server->num_workers = conf->num_workers;
+    server->workers = malloc(conf->num_workers * sizeof(pthread_t));
     if (server->workers == 0) {
         LOG_FATAL("Failed to allocate memory for HTTP worker threads array.");
     }
-    for (int i = 0; i < num_workers; i++) {
+    for (int i = 0; i < conf->num_workers; i++) {
         ASSERT_0(pthread_create(&server->workers[i], 0, http_worker, server));
     }
 }
