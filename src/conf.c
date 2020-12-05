@@ -146,6 +146,24 @@ static void parse_bool(const char* file, int lineno, int colno, const char* valu
     }
 }
 
+static void parse_log_level(const char* file, int lineno, int colno, const char* value, void* dst) {
+    if (strncasecmp(value, "debug", 5) == 0) {
+        *((int*)dst) = 0;
+    } else if (strncasecmp(value, "info", 4) == 0) {
+        *((int*)dst) = 1;
+    } else if (strncasecmp(value, "warning", 7) == 0) {
+        *((int*)dst) = 2;
+    } else if (strncasecmp(value, "error", 5) == 0) {
+        *((int*)dst) = 3;
+    } else if (strncasecmp(value, "fatal", 5) == 0) {
+        *((int*)dst) = 4;
+    } else {
+        fprintf(stderr, "Conf file %s:%d:%d invalid value (expected debug, info, warning, error or fatal)\n", file,
+                lineno, colno);
+        exit(EXIT_FAILURE);
+    }
+}
+
 struct conf load_conf() {
     struct conf conf;
     conf.file_path = get_config_file_path();
@@ -165,7 +183,7 @@ struct conf load_conf() {
     conf.http.request_buffer_size = 65536;
 #define NUM_CONF_ENTRIES 14
     struct conf_entry entries[NUM_CONF_ENTRIES] = {
-        {"logging.min_level", &conf.logging.min_level, parse_int, 0},
+        {"logging.min_level", &conf.logging.min_level, parse_log_level, 0},
         {"logging.filename_and_lineno", &conf.logging.filename_and_lineno, parse_bool, 0},
         {"file_cache.num_buckets", &conf.file_cache.num_buckets, parse_int, 0},
         {"file_cache.bucket_initial_capacity", &conf.file_cache.bucket_initial_capacity, parse_int, 0},
