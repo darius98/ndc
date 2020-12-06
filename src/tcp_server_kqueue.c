@@ -31,7 +31,6 @@ void run_tcp_server_loop(struct tcp_server *server) {
 
     LOG_INFO("Running HTTP server on port %d", server->port);
 
-    struct tcp_conn *conn;
     while (1) {
         int n_ev = kevent(kqueue_fd, 0, 0, events, server->conf->events_batch_size, 0);
         if (n_ev < 0) {
@@ -48,7 +47,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
             int event_fd = (int)events[i].ident;
             if (event_fd == server->listen_fd) {
                 LOG_DEBUG("Received kevent on TCP server socket (fd=%d)", server->listen_fd);
-                conn = accept_tcp_conn(server);
+                struct tcp_conn* conn = accept_tcp_conn(server);
                 if (conn != 0) {
                     EV_SET(&event, conn->fd, EVFILT_READ, EV_ADD, 0, 0, conn);
                     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
@@ -60,14 +59,10 @@ void run_tcp_server_loop(struct tcp_server *server) {
             } else if (event_fd == server->notify_pipe[0]) {
                 tcp_server_process_notification(server);
             } else {
-                conn = (struct tcp_conn *)events[i].udata;
                 if (events[i].flags & EV_EOF) {
-                    if (atomic_load_explicit(&conn->is_closed, memory_order_acquire) == 0) {
-                        LOG_DEBUG("Closing connection %s:%d (fd=%d) because of EOF kevent", ipv4_str(conn->ipv4),
-                                  conn->port, conn->fd);
-                        close_tcp_conn(server, conn);
-                    }
+                    close_tcp_conn_by_fd(server, event_fd);
                 } else if (events[i].filter & EVFILT_READ) {
+                    struct tcp_conn* conn = (struct tcp_conn *)events[i].udata;
                     LOG_DEBUG("Received read kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
                               conn->fd);
                     int n_bytes = recv_from_tcp_conn(server, conn);

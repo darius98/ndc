@@ -195,8 +195,15 @@ void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn) {
     struct write_worker_notification notification;
     notification.fd = conn->fd;
     notification.type = ww_notify_remove;
-    // TODO: EH.
-    write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
+    int ret = write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
+    if (ret != sizeof(struct write_worker_notification)) {
+        if (ret < 0) {
+            LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, strerror(errno));
+        } else {
+            LOG_FATAL("Failed to write() to TCP server notify pipe, wrote %d out of %d bytes.", ret,
+                      (int)sizeof(struct write_worker_notification));
+        }
+    }
 }
 
 void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const char* buf, int buf_len, void* cb_data,
@@ -236,8 +243,15 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
     struct write_worker_notification notification;
     notification.fd = task_list->conn->fd;
     notification.type = ww_notify_execute;
-    // TODO: EH.
-    write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
+    int ret = write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
+    if (ret != sizeof(struct write_worker_notification)) {
+        if (ret < 0) {
+            LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, strerror(errno));
+        } else {
+            LOG_FATAL("Failed to write() to TCP server notify pipe, wrote %d out of %d bytes.", ret,
+                      (int)sizeof(struct write_worker_notification));
+        }
+    }
     release_task_list(queue, task_list);
 }
 

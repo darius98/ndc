@@ -200,6 +200,14 @@ struct tcp_server_notification {
     void* data;
 };
 
+static void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* conn) {
+    tcp_conn_before_close_callback(server->cb_data, conn);
+    tcp_conn_table_erase(&server->conn_table, conn);
+    write_queue_remove_conn(&server->w_queue, conn);
+    LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
+    tcp_conn_dec_refcount(conn);
+}
+
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     if (atomic_exchange_explicit(&conn->is_closed, 1, memory_order_acq_rel) == 1) {
         LOG_DEBUG("Trying to close TCP connection that is already closed %s:%d (fd=%d)", ipv4_str(conn->ipv4),
@@ -210,8 +218,30 @@ void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     struct tcp_server_notification notification;
     notification.type = ts_notify_close_conn;
     notification.data = conn;
-    // TODO: EH.
-    write(server->notify_pipe[1], &notification, sizeof(struct tcp_server_notification));
+    int ret = write(server->notify_pipe[1], &notification, sizeof(struct tcp_server_notification));
+    if (ret != sizeof(struct tcp_server_notification)) {
+        if (ret < 0) {
+            LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, strerror(errno));
+        } else {
+            LOG_FATAL("Failed to write() to TCP server notify pipe, wrote %d out of %d bytes.", ret,
+                      (int)sizeof(struct tcp_server_notification));
+        }
+    }
+}
+
+void close_tcp_conn_by_fd(struct tcp_server* server, int fd) {
+    struct tcp_conn* conn = find_tcp_conn(server, fd);
+    if (conn == 0) {
+        LOG_DEBUG("Trying to close TCP connection that is not in tcp connections table fd=%d.", fd);
+        return;
+    }
+    if (atomic_exchange_explicit(&conn->is_closed, 1, memory_order_acq_rel) == 1) {
+        LOG_DEBUG("Trying to close TCP connection that is already closed %s:%d (fd=%d)", ipv4_str(conn->ipv4),
+                  conn->port, conn->fd);
+        return;
+    }
+    LOG_DEBUG("Closing connection %s:%d (fd=%d) because of EOF kevent", ipv4_str(conn->ipv4), conn->port, conn->fd);
+    close_tcp_conn_in_loop(server, conn);
 }
 
 void tcp_server_process_notification(struct tcp_server* server) {
@@ -224,11 +254,7 @@ void tcp_server_process_notification(struct tcp_server* server) {
     }
     if (notification.type == ts_notify_close_conn) {
         struct tcp_conn* conn = notification.data;
-        tcp_conn_before_close_callback(server->cb_data, conn);
-        tcp_conn_table_erase(&server->conn_table, conn);
-        write_queue_remove_conn(&server->w_queue, conn);
-        LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
-        tcp_conn_dec_refcount(conn);
+        close_tcp_conn_in_loop(server, conn);
     }
 }
 
