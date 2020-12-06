@@ -2,7 +2,7 @@
 
 #include <arpa/inet.h>
 #include <execinfo.h>
-#include <pthread.h>
+#include "ff_pthread.h"
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>

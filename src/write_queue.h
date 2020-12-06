@@ -2,8 +2,7 @@
 #define NDC_WRITE_SERVER_H_
 
 #include "conf.h"
-
-#include <pthread.h>
+#include "ff_pthread.h"
 
 struct tcp_server;
 struct tcp_conn;

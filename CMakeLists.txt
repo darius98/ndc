@@ -12,6 +12,7 @@ check_include_files("sys/epoll.h" USE_EPOLL)
 
 set(ndc_sources
         src/conf.c
+        src/ff_pthread.c
         src/file_cache.c
         src/http_server.c
         src/logging.c

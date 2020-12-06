@@ -10,7 +10,7 @@
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
     LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port);
-    ASSERT_0(pthread_mutex_lock(&server->lock));
+    ff_pthread_mutex_lock(&server->lock);
     req->next = 0;
     if (server->tail != 0) {
         server->tail->next = req;
@@ -19,17 +19,17 @@ static void http_server_push_req(struct http_server* server, struct http_req* re
     if (server->head == 0) {
         server->head = req;
     }
-    ASSERT_0(pthread_mutex_unlock(&server->lock));
-    ASSERT_0(pthread_cond_signal(&server->cond_var));
+    ff_pthread_mutex_unlock(&server->lock);
+    ff_pthread_cond_signal(&server->cond_var);
 }
 
 static struct http_req* http_server_pop_req(struct http_server* server) {
     struct http_req* req;
-    ASSERT_0(pthread_mutex_lock(&server->lock));
+    ff_pthread_mutex_lock(&server->lock);
     while (1) {
         req = server->head;
         if (req == 0) {
-            ASSERT_0(pthread_cond_wait(&server->cond_var, &server->lock));
+            ff_pthread_cond_wait(&server->cond_var, &server->lock);
         } else {
             server->head = req->next;
             if (server->head == 0) {
@@ -39,7 +39,7 @@ static struct http_req* http_server_pop_req(struct http_server* server) {
             break;
         }
     }
-    ASSERT_0(pthread_mutex_unlock(&server->lock));
+    ff_pthread_mutex_unlock(&server->lock);
     return req;
 }
 
@@ -57,8 +57,8 @@ void init_http_server(struct http_server* server, const struct http_conf* conf) 
     server->head = 0;
     server->tail = 0;
     server->req_buf_cap = conf->request_buffer_size;
-    ASSERT_0(pthread_mutex_init(&server->lock, 0));
-    ASSERT_0(pthread_cond_init(&server->cond_var, 0));
+    ff_pthread_mutex_init(&server->lock, 0);
+    ff_pthread_cond_init(&server->cond_var, 0);
     atomic_store_explicit(&server->stopped, 0, memory_order_release);
     server->num_workers = conf->num_workers;
     server->workers = malloc(conf->num_workers * sizeof(pthread_t));
@@ -66,7 +66,7 @@ void init_http_server(struct http_server* server, const struct http_conf* conf) 
         LOG_FATAL("Failed to allocate memory for HTTP worker threads array.");
     }
     for (int i = 0; i < conf->num_workers; i++) {
-        ASSERT_0(pthread_create(&server->workers[i], 0, http_worker, server));
+        ff_pthread_create(&server->workers[i], 0, http_worker, server);
     }
 }
 
@@ -159,8 +159,6 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
     char* initial_buf = buf;
     while (1) {
         struct http_req* req = conn->user_data;
-        ASSERT(req != 0);
-
         if (req->method == 0) {
             char* end = find_next_space(buf);
             if (end == 0) {

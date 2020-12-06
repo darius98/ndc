@@ -11,7 +11,7 @@
 #include "logging.h"
 
 void init_file_cache(struct file_cache* cache, struct file_cache_conf* conf) {
-    ASSERT_0(pthread_mutex_init(&cache->lock, 0));
+    ff_pthread_mutex_init(&cache->lock, 0);
     cache->size = 0;
     cache->n_buckets = conf->num_buckets;
     cache->buckets = malloc(sizeof(struct file_cache_bucket) * conf->num_buckets);
@@ -137,35 +137,35 @@ static void unmap_file(struct mapped_file* file) {
 }
 
 struct mapped_file* open_file(struct file_cache* cache, char* path) {
-    ASSERT_0(pthread_mutex_lock(&cache->lock));
+    ff_pthread_mutex_lock(&cache->lock);
     struct mapped_file* file = file_cache_lookup(cache, path);
     if (file == 0) {
         file = map_file(path);
         if (file == 0) {
-            ASSERT_0(pthread_mutex_unlock(&cache->lock));
+            ff_pthread_mutex_unlock(&cache->lock);
             return 0;
         }
         if (file_cache_insert(cache, file) < 0) {
             unmap_file(file);
-            ASSERT_0(pthread_mutex_unlock(&cache->lock));
+            ff_pthread_mutex_unlock(&cache->lock);
             return 0;
         }
     } else {
         file->ref_count += 1;
         free(path);
     }
-    ASSERT_0(pthread_mutex_unlock(&cache->lock));
+    ff_pthread_mutex_unlock(&cache->lock);
     return file;
 }
 
 void close_file(struct file_cache* cache, struct mapped_file* file) {
     int unmap = 0;
-    ASSERT_0(pthread_mutex_lock(&cache->lock));
+    ff_pthread_mutex_lock(&cache->lock);
     if ((--file->ref_count) == 0) {
         file_cache_erase(cache, file);
         unmap = 1;
     }
-    ASSERT_0(pthread_mutex_unlock(&cache->lock));
+    ff_pthread_mutex_unlock(&cache->lock);
     if (unmap == 1) {
         unmap_file(file);
     }

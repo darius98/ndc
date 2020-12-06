@@ -2,7 +2,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -25,29 +24,27 @@ static void init_tasks_list_table(struct write_task_list_table* table, int n_buc
             LOG_FATAL("Failed to allocate bucket %d for write task lists table", i);
         }
     }
-    ASSERT_0(pthread_mutex_init(&table->lock, 0));
+    ff_pthread_mutex_init(&table->lock, 0);
 }
 
 static struct write_task* write_queue_top(struct write_queue* queue, struct write_task_list* task_list) {
     struct write_task* task;
-    ASSERT_0(pthread_mutex_lock(&queue->lock));
+    ff_pthread_mutex_lock(&queue->lock);
     task = task_list->head;
-    ASSERT_0(pthread_mutex_unlock(&queue->lock));
+    ff_pthread_mutex_unlock(&queue->lock);
     return task;
 }
 
-static void write_queue_pop(struct write_queue* queue, struct write_task_list* task_list,
-                            struct write_task* expected_task, int err) {
+static void write_queue_pop(struct write_queue* queue, struct write_task_list* task_list, int err) {
     struct write_task* task;
-    ASSERT_0(pthread_mutex_lock(&queue->lock));
+    ff_pthread_mutex_lock(&queue->lock);
     task = task_list->head;
-    ASSERT(expected_task == task);
     task_list->head = task->next;
     if (task_list->head == 0) {
         task_list->tail = 0;
     }
     task->next = 0;
-    ASSERT_0(pthread_mutex_unlock(&queue->lock));
+    ff_pthread_mutex_unlock(&queue->lock);
     task->cb(task->cb_data, task_list->conn, err);
     free(task);
 }
@@ -55,7 +52,7 @@ static void write_queue_pop(struct write_queue* queue, struct write_task_list* t
 static void delete_task_list(struct write_queue* queue, struct write_task_list* task_list) {
     struct write_task* task = write_queue_top(queue, task_list);
     while (task != 0) {
-        write_queue_pop(queue, task_list, task, ECONNABORTED);
+        write_queue_pop(queue, task_list, ECONNABORTED);
         task = write_queue_top(queue, task_list);
     }
     LOG_DEBUG("Reclaiming memory for write_task_list for connection %s:%d (fd=%d)", ipv4_str(task_list->conn->ipv4),
@@ -76,12 +73,12 @@ static int add_task_list(struct write_task_list_table* table, struct tcp_conn* c
     task_list->head = 0;
     task_list->tail = 0;
 
-    ASSERT_0(pthread_mutex_lock(&table->lock));
+    ff_pthread_mutex_lock(&table->lock);
     struct write_task_list_table_bucket* bucket = &table->buckets[conn->fd % table->n_buckets];
     if (bucket->len == bucket->cap) {
         void* resized = realloc(bucket->entries, sizeof(void*) * bucket->cap * 2);
         if (resized == 0) {
-            ASSERT_0(pthread_mutex_unlock(&table->lock));
+            ff_pthread_mutex_unlock(&table->lock);
             tcp_conn_dec_refcount(conn);
             free(task_list);
             return -1;
@@ -92,13 +89,13 @@ static int add_task_list(struct write_task_list_table* table, struct tcp_conn* c
     task_list->ref_count++;
     bucket->entries[bucket->len++] = task_list;
     table->size++;
-    ASSERT_0(pthread_mutex_unlock(&table->lock));
+    ff_pthread_mutex_unlock(&table->lock);
     return 0;
 }
 
 static void remove_task_list(struct write_queue* queue, int fd) {
     struct write_task_list* task_list = 0;
-    ASSERT_0(pthread_mutex_lock(&queue->task_lists.lock));
+    ff_pthread_mutex_lock(&queue->task_lists.lock);
     struct write_task_list_table_bucket* bucket = &queue->task_lists.buckets[fd % queue->task_lists.n_buckets];
     for (int i = 0; i < bucket->len; i++) {
         if (bucket->entries[i]->conn->fd == fd) {
@@ -113,7 +110,7 @@ static void remove_task_list(struct write_queue* queue, int fd) {
             break;
         }
     }
-    ASSERT_0(pthread_mutex_unlock(&queue->task_lists.lock));
+    ff_pthread_mutex_unlock(&queue->task_lists.lock);
     if (task_list != 0) {
         delete_task_list(queue, task_list);
     }
@@ -121,7 +118,7 @@ static void remove_task_list(struct write_queue* queue, int fd) {
 
 static struct write_task_list* get_task_list(struct write_queue* queue, int fd) {
     struct write_task_list* task_list = 0;
-    ASSERT_0(pthread_mutex_lock(&queue->task_lists.lock));
+    ff_pthread_mutex_lock(&queue->task_lists.lock);
     struct write_task_list_table_bucket* bucket = &queue->task_lists.buckets[fd % queue->task_lists.n_buckets];
     for (int i = 0; i < bucket->len; i++) {
         if (bucket->entries[i]->conn->fd == fd) {
@@ -130,17 +127,17 @@ static struct write_task_list* get_task_list(struct write_queue* queue, int fd) 
             break;
         }
     }
-    ASSERT_0(pthread_mutex_unlock(&queue->task_lists.lock));
+    ff_pthread_mutex_unlock(&queue->task_lists.lock);
     return task_list;
 }
 
 static void release_task_list(struct write_queue* queue, struct write_task_list* task_list) {
-    ASSERT_0(pthread_mutex_lock(&queue->task_lists.lock));
+    ff_pthread_mutex_lock(&queue->task_lists.lock);
     task_list->ref_count -= 1;
     if (task_list->ref_count > 0) {
         task_list = 0;
     }
-    ASSERT_0(pthread_mutex_unlock(&queue->task_lists.lock));
+    ff_pthread_mutex_unlock(&queue->task_lists.lock);
     if (task_list != 0) {
         delete_task_list(queue, task_list);
     }
@@ -156,20 +153,26 @@ void init_write_queue(struct write_queue* queue, struct tcp_write_queue_conf* co
     queue->tcp_server = tcp_server;
     queue->loop_max_events = conf->events_batch_size;
     init_tasks_list_table(&queue->task_lists, conf->num_buckets, conf->bucket_initial_capacity);
-    ASSERT_0(pthread_mutex_init(&queue->lock, 0));
-    ASSERT_0(pipe(queue->loop_notify_pipe));
+    ff_pthread_mutex_init(&queue->lock, 0);
+    if (pipe(queue->loop_notify_pipe) < 0) {
+        LOG_FATAL("pipe() failed errno=%d (%s)", errno, strerror(errno));
+    }
     int prev_flags = fcntl(queue->loop_notify_pipe[0], F_GETFD);
     if (prev_flags < 0) {
         LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
     }
-    ASSERT_0(fcntl(queue->loop_notify_pipe[0], F_SETFD, prev_flags | O_NONBLOCK));
+    if(fcntl(queue->loop_notify_pipe[0], F_SETFD, prev_flags | O_NONBLOCK) < 0) {
+        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
+    }
     prev_flags = fcntl(queue->loop_notify_pipe[0], F_GETFD);
     if (prev_flags < 0) {
         LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
     }
-    ASSERT_0(fcntl(queue->loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK));
+    if(fcntl(queue->loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK) < 0) {
+        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
+    }
     init_write_loop(queue);
-    ASSERT_0(pthread_create(&queue->worker, 0, write_queue_worker, queue));
+    ff_pthread_create(&queue->worker, 0, write_queue_worker, queue);
 }
 
 int write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn) {
@@ -230,7 +233,7 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
     task->cb_data = cb_data;
     task->cb = cb;
 
-    ASSERT_0(pthread_mutex_lock(&queue->lock));
+    ff_pthread_mutex_lock(&queue->lock);
     task->next = 0;
     if (task_list->tail != 0) {
         task_list->tail->next = task;
@@ -239,7 +242,7 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
     if (task_list->head == 0) {
         task_list->head = task;
     }
-    ASSERT_0(pthread_mutex_unlock(&queue->lock));
+    ff_pthread_mutex_unlock(&queue->lock);
     struct write_worker_notification notification;
     notification.fd = task_list->conn->fd;
     notification.type = ww_notify_execute;
@@ -266,14 +269,14 @@ void write_queue_process_writes(struct write_queue* queue, int fd) {
         ssize_t chunk_sz = write(fd, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
         if (chunk_sz < 0 && errno != EWOULDBLOCK) {
             LOG_ERROR("write() failed with errno=%d (%s)", errno, strerror(errno));
-            write_queue_pop(queue, task_list, task, errno);
+            write_queue_pop(queue, task_list, errno);
             close_tcp_conn(queue->tcp_server, task_list->conn);
             break;
         } else if (chunk_sz > 0) {
             LOG_DEBUG("Wrote %d bytes to %s:%d", (int)chunk_sz, ipv4_str(task_list->conn->ipv4), task_list->conn->port);
             task->buf_crs += chunk_sz;
             if (task->buf_crs == task->buf_len) {
-                write_queue_pop(queue, task_list, task, 0);
+                write_queue_pop(queue, task_list, 0);
                 task = write_queue_top(queue, task_list);
             }
         }

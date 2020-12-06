@@ -2,8 +2,7 @@
 #define NDC_HTTP_H_
 
 #include "conf.h"
-
-#include <pthread.h>
+#include "ff_pthread.h"
 
 struct tcp_conn;
 
