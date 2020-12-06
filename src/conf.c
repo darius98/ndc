@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-const char* get_config_file_path() {
+static const char* get_config_file_path() {
     const char* c = getenv(NDC_CONF_FILE_ENV_VAR);
     if (c != 0) {
         return c;
