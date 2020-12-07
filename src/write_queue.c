@@ -83,13 +83,13 @@ static void write_queue_pop_all(struct write_queue* queue, struct write_task_lis
     }
 }
 
-static int add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
+static void add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
     struct write_task_list* task_list = malloc(sizeof(struct write_task_list));
     if (task_list == 0) {
         LOG_ERROR("Failed to allocate write task list for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
-        return -1;
+        tcp_conn_dec_refcount(conn);
+        return;
     }
-    tcp_conn_inc_refcount(conn);
     atomic_store_explicit(&task_list->ref_count, 1, memory_order_release);
     task_list->conn = conn;
     task_list->head = 0;
@@ -103,7 +103,7 @@ static int add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
             ff_pthread_mutex_unlock(&bucket->lock);
             tcp_conn_dec_refcount(conn);
             free(task_list);
-            return -1;
+            return;
         }
         bucket->entries = resized;
         bucket->cap *= 2;
@@ -111,7 +111,6 @@ static int add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
     bucket->entries[bucket->len++] = task_list;
     ff_pthread_mutex_unlock(&bucket->lock);
     atomic_fetch_add_explicit(&queue->task_lists.size, 1, memory_order_release);
-    return 0;
 }
 
 static int release_task_list(struct write_queue* queue, struct write_task_list* task_list) {
@@ -184,29 +183,19 @@ void init_write_queue(struct write_queue* queue, struct tcp_write_queue_conf* co
     ff_pthread_create(&queue->worker, 0, write_queue_worker, queue);
 }
 
-int write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn) {
-    if (write_loop_add_fd(queue, conn->fd) < 0) {
-        return -1;
-    }
-    if (add_task_list(queue, conn) < 0) {
-        return -1;
-    }
-    return 0;
-}
-
 struct write_worker_notification {
-    int fd;
     enum
     {
+        ww_notify_add,
         ww_notify_execute,
         ww_notify_remove
     } type;
+    int fd;
+    struct tcp_conn* conn;
+    struct write_task* task;
 };
 
-void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn) {
-    struct write_worker_notification notification;
-    notification.fd = conn->fd;
-    notification.type = ww_notify_remove;
+static void write_notification(struct write_queue* queue, struct  write_worker_notification notification) {
     int ret = write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
     if (ret != sizeof(struct write_worker_notification)) {
         if (ret < 0) {
@@ -218,21 +207,32 @@ void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn) {
     }
 }
 
+int write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn) {
+    if (write_loop_add_fd(queue, conn->fd) < 0) {
+        return -1;
+    }
+    tcp_conn_inc_refcount(conn);
+    struct write_worker_notification notification;
+    notification.conn = conn;
+    notification.type = ww_notify_add;
+    write_notification(queue, notification);
+    return 0;
+}
+
+void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn) {
+    struct write_worker_notification notification;
+    notification.fd = conn->fd;
+    notification.type = ww_notify_remove;
+    write_notification(queue, notification);
+}
+
 void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const char* buf, int buf_len, void* cb_data,
                       write_task_cb cb) {
-    struct write_task_list* task_list = get_task_list(queue, conn->fd);
-    if (task_list == 0) {
-        LOG_ERROR("Failed to allocate write task list for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
-        cb(cb_data, conn, -1);
-        close_tcp_conn(queue->tcp_server, conn);
-        return;
-    }
     struct write_task* task = malloc(sizeof(struct write_task));
     if (task == 0) {
         LOG_ERROR("Failed to allocate write task for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
         cb(cb_data, conn, -1);
         close_tcp_conn(queue->tcp_server, conn);
-        release_task_list(queue, task_list);
         return;
     }
 
@@ -241,6 +241,26 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
     task->buf = buf;
     task->cb_data = cb_data;
     task->cb = cb;
+
+    struct write_worker_notification notification;
+    notification.fd = conn->fd;
+    notification.conn = conn;
+    notification.task = task;
+    notification.type = ww_notify_execute;
+    write_notification(queue, notification);
+    tcp_conn_inc_refcount(conn); // To make sure the connection stays alive until push_task is executed.
+}
+
+static int push_task(struct write_queue* queue, struct tcp_conn* conn, struct write_task* task, int fd) {
+    tcp_conn_dec_refcount(conn);
+    struct write_task_list* task_list = get_task_list(queue, fd);
+    if (task_list == 0) {
+        LOG_ERROR("Failed to allocate write task list for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
+        task->cb(task->cb_data, conn, -1);
+        close_tcp_conn(queue->tcp_server, conn);
+        free(task);
+        return -1;
+    }
 
     lock_task_list(queue, task_list);
     task->next = 0;
@@ -252,19 +272,8 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
         task_list->head = task;
     }
     unlock_task_list(queue, task_list);
-    struct write_worker_notification notification;
-    notification.fd = task_list->conn->fd;
-    notification.type = ww_notify_execute;
-    int ret = write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
-    if (ret != sizeof(struct write_worker_notification)) {
-        if (ret < 0) {
-            LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, errno_str(errno));
-        } else {
-            LOG_FATAL("Failed to write() to TCP server notify pipe, wrote %d out of %d bytes.", ret,
-                      (int)sizeof(struct write_worker_notification));
-        }
-    }
     release_task_list(queue, task_list);
+    return 0;
 }
 
 void write_queue_process_writes(struct write_queue* queue, int fd) {
@@ -302,8 +311,12 @@ void write_queue_process_notification(struct write_queue* queue) {
                   errno, errno_str(errno));
     }
     if (notification.type == ww_notify_execute) {
-        write_queue_process_writes(queue, notification.fd);
+        if (push_task(queue, notification.conn, notification.task, notification.fd) == 0) {
+            write_queue_process_writes(queue, notification.fd);
+        }
     } else if (notification.type == ww_notify_remove) {
         remove_task_list(queue, notification.fd);
+    } else if (notification.type == ww_notify_add) {
+        add_task_list(queue, notification.conn);
     }
 }
