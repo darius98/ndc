@@ -68,16 +68,19 @@ static void write_queue_pop(struct write_queue* queue, struct write_task_list* t
     free(task);
 }
 
-static void delete_task_list(struct write_queue* queue, struct write_task_list* task_list) {
-    struct write_task* task = write_queue_top(queue, task_list);
+static void write_queue_pop_all(struct write_queue* queue, struct write_task_list* task_list, int err) {
+    struct write_task* task;
+    lock_task_list(queue, task_list);
+    task = task_list->head;
+    task_list->head = 0;
+    task_list->tail = 0;
+    unlock_task_list(queue, task_list);
     while (task != 0) {
-        write_queue_pop(queue, task_list, ECONNABORTED);
-        task = write_queue_top(queue, task_list);
+        struct write_task* next = task->next;
+        task->cb(task->cb_data, task_list->conn, err);
+        free(task);
+        task = next;
     }
-    LOG_DEBUG("Reclaiming memory for write_task_list for connection %s:%d (fd=%d)", ipv4_str(task_list->conn->ipv4),
-              task_list->conn->port, task_list->conn->fd);
-    tcp_conn_dec_refcount(task_list->conn);
-    free(task_list);
 }
 
 static int add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
@@ -87,7 +90,7 @@ static int add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
         return -1;
     }
     tcp_conn_inc_refcount(conn);
-    task_list->ref_count = 0;
+    atomic_store_explicit(&task_list->ref_count, 1, memory_order_release);
     task_list->conn = conn;
     task_list->head = 0;
     task_list->tail = 0;
@@ -105,10 +108,21 @@ static int add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
         bucket->entries = resized;
         bucket->cap *= 2;
     }
-    task_list->ref_count++;
     bucket->entries[bucket->len++] = task_list;
     ff_pthread_mutex_unlock(&bucket->lock);
     atomic_fetch_add_explicit(&queue->task_lists.size, 1, memory_order_release);
+    return 0;
+}
+
+static int release_task_list(struct write_queue* queue, struct write_task_list* task_list) {
+    if (atomic_fetch_sub_explicit(&task_list->ref_count, 1, memory_order_acq_rel) == 1) {
+        write_queue_pop_all(queue, task_list, ECONNABORTED);
+        LOG_DEBUG("Reclaiming memory for write_task_list for connection %s:%d (fd=%d)", ipv4_str(task_list->conn->ipv4),
+                  task_list->conn->port, task_list->conn->fd);
+        tcp_conn_dec_refcount(task_list->conn);
+        free(task_list);
+        return 1;
+    }
     return 0;
 }
 
@@ -119,10 +133,6 @@ static void remove_task_list(struct write_queue* queue, int fd) {
     for (int i = 0; i < bucket->len; i++) {
         if (bucket->entries[i]->conn->fd == fd) {
             task_list = bucket->entries[i];
-            task_list->ref_count -= 1;
-            if (task_list->ref_count > 0) {
-                task_list = 0;
-            }
             bucket->entries[i] = bucket->entries[bucket->len - 1];
             bucket->len--;
             break;
@@ -130,8 +140,9 @@ static void remove_task_list(struct write_queue* queue, int fd) {
     }
     ff_pthread_mutex_unlock(&bucket->lock);
     if (task_list != 0) {
-        atomic_fetch_sub_explicit(&queue->task_lists.size, 1, memory_order_release);
-        delete_task_list(queue, task_list);
+        if (release_task_list(queue, task_list)) {
+            atomic_fetch_sub_explicit(&queue->task_lists.size, 1, memory_order_release);
+        }
     }
 }
 
@@ -142,25 +153,12 @@ static struct write_task_list* get_task_list(struct write_queue* queue, int fd) 
     for (int i = 0; i < bucket->len; i++) {
         if (bucket->entries[i]->conn->fd == fd) {
             task_list = bucket->entries[i];
-            task_list->ref_count += 1;
+            atomic_fetch_add_explicit(&task_list->ref_count, 1, memory_order_release);
             break;
         }
     }
     ff_pthread_mutex_unlock(&bucket->lock);
     return task_list;
-}
-
-static void release_task_list(struct write_queue* queue, struct write_task_list* task_list) {
-    struct write_task_list_table_bucket* bucket = task_list_bucket(queue, task_list);
-    ff_pthread_mutex_lock(&bucket->lock);
-    task_list->ref_count -= 1;
-    if (task_list->ref_count > 0) {
-        task_list = 0;
-    }
-    ff_pthread_mutex_unlock(&bucket->lock);
-    if (task_list != 0) {
-        delete_task_list(queue, task_list);
-    }
 }
 
 static void* write_queue_worker(void* arg) {

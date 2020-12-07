@@ -19,7 +19,7 @@ struct write_task {
 };
 
 struct write_task_list {
-    int ref_count;
+    _Atomic(int) ref_count;
     struct tcp_conn* conn;
     struct write_task* head;
     struct write_task* tail;
