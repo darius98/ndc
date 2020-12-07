@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "fd.h"
 #include "logging.h"
 #include "write_queue.h"
 
@@ -76,6 +77,12 @@ void init_tcp_server(struct tcp_server* server, int port, struct tcp_server_conf
     if (pipe(server->notify_pipe) < 0) {
         LOG_FATAL("pipe() failed errno=%d (%s)", errno, errno_str(errno));
     }
+    if (set_nonblocking(server->notify_pipe[0]) < 0) {
+        LOG_FATAL("Failed to set read pipe non-blocking for TCP write queue");
+    }
+    if (set_nonblocking(server->notify_pipe[1]) < 0) {
+        LOG_FATAL("Failed to set write pipe non-blocking for TCP write queue");
+    }
 
     server->listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (server->listen_fd < 0) {
@@ -108,6 +115,15 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
 
     int ipv4 = client_addr.sin_addr.s_addr;
     int port = client_addr.sin_port;
+
+    if (set_nonblocking(fd) < 0) {
+        LOG_ERROR("Failed to set socket non-blocking for connection %s:%d", ipv4_str(ipv4), port);
+        if (close(fd) < 0) {
+            LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
+                      port, errno, errno_str(errno));
+        }
+        return 0;
+    }
 
     struct tcp_conn* conn = malloc(sizeof(struct tcp_conn));
     if (conn == 0) {

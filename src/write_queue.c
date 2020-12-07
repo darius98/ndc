@@ -1,11 +1,11 @@
 #include "write_queue.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include "fd.h"
 #include "logging.h"
 #include "tcp_server.h"
 
@@ -157,19 +157,11 @@ void init_write_queue(struct write_queue* queue, struct tcp_write_queue_conf* co
     if (pipe(queue->loop_notify_pipe) < 0) {
         LOG_FATAL("pipe() failed errno=%d (%s)", errno, errno_str(errno));
     }
-    int prev_flags = fcntl(queue->loop_notify_pipe[0], F_GETFD);
-    if (prev_flags < 0) {
-        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, errno_str(errno));
+    if (set_nonblocking(queue->loop_notify_pipe[0]) < 0) {
+        LOG_FATAL("Failed to set read pipe non-blocking for TCP write queue");
     }
-    if (fcntl(queue->loop_notify_pipe[0], F_SETFD, prev_flags | O_NONBLOCK) < 0) {
-        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, errno_str(errno));
-    }
-    prev_flags = fcntl(queue->loop_notify_pipe[0], F_GETFD);
-    if (prev_flags < 0) {
-        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, errno_str(errno));
-    }
-    if (fcntl(queue->loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK) < 0) {
-        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, errno_str(errno));
+    if (set_nonblocking(queue->loop_notify_pipe[1]) < 0) {
+        LOG_FATAL("Failed to set write pipe non-blocking for TCP write queue");
     }
     init_write_loop(queue);
     ff_pthread_create(&queue->worker, 0, write_queue_worker, queue);
