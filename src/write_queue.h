@@ -26,7 +26,6 @@ struct write_task_list {
 };
 
 struct write_task_list_table_bucket {
-    pthread_mutex_t lock;
     pthread_mutex_t task_list_lock;
     int len;
     int cap;

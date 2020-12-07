@@ -24,7 +24,6 @@ static void init_tasks_list_table(struct write_task_list_table* table, int n_buc
         if (table->buckets[i].entries == 0) {
             LOG_FATAL("Failed to allocate bucket %d for write task lists table", i);
         }
-        ff_pthread_mutex_init(&table->buckets[i].lock, 0);
         ff_pthread_mutex_init(&table->buckets[i].task_list_lock, 0);
     }
 }
@@ -96,11 +95,9 @@ static void add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
     task_list->tail = 0;
 
     struct write_task_list_table_bucket* bucket = task_list_bucket(queue, task_list);
-    ff_pthread_mutex_lock(&bucket->lock);
     if (bucket->len == bucket->cap) {
         void* resized = realloc(bucket->entries, sizeof(void*) * bucket->cap * 2);
         if (resized == 0) {
-            ff_pthread_mutex_unlock(&bucket->lock);
             tcp_conn_dec_refcount(conn);
             free(task_list);
             return;
@@ -109,7 +106,6 @@ static void add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
         bucket->cap *= 2;
     }
     bucket->entries[bucket->len++] = task_list;
-    ff_pthread_mutex_unlock(&bucket->lock);
     atomic_fetch_add_explicit(&queue->task_lists.size, 1, memory_order_release);
 }
 
@@ -128,7 +124,6 @@ static int release_task_list(struct write_queue* queue, struct write_task_list* 
 static void remove_task_list(struct write_queue* queue, int fd) {
     struct write_task_list* task_list = 0;
     struct write_task_list_table_bucket* bucket = fd_bucket(queue, fd);
-    ff_pthread_mutex_lock(&bucket->lock);
     for (int i = 0; i < bucket->len; i++) {
         if (bucket->entries[i]->conn->fd == fd) {
             task_list = bucket->entries[i];
@@ -137,7 +132,6 @@ static void remove_task_list(struct write_queue* queue, int fd) {
             break;
         }
     }
-    ff_pthread_mutex_unlock(&bucket->lock);
     if (task_list != 0) {
         if (release_task_list(queue, task_list)) {
             atomic_fetch_sub_explicit(&queue->task_lists.size, 1, memory_order_release);
@@ -148,7 +142,6 @@ static void remove_task_list(struct write_queue* queue, int fd) {
 static struct write_task_list* get_task_list(struct write_queue* queue, int fd) {
     struct write_task_list* task_list = 0;
     struct write_task_list_table_bucket* bucket = fd_bucket(queue, fd);
-    ff_pthread_mutex_lock(&bucket->lock);
     for (int i = 0; i < bucket->len; i++) {
         if (bucket->entries[i]->conn->fd == fd) {
             task_list = bucket->entries[i];
@@ -156,7 +149,6 @@ static struct write_task_list* get_task_list(struct write_queue* queue, int fd) 
             break;
         }
     }
-    ff_pthread_mutex_unlock(&bucket->lock);
     return task_list;
 }
 
