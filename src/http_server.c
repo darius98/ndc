@@ -9,7 +9,8 @@
 #include "tcp_server.h"
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
-    LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port);
+    LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req->method, req->path, ipv4_str(req->conn->ipv4),
+              req->conn->port);
     ff_pthread_mutex_lock(&server->lock);
     req->next = 0;
     if (server->tail != 0) {
@@ -47,7 +48,8 @@ static void* http_worker(void* arg) {
     struct http_server* server = (struct http_server*)arg;
     while (atomic_load_explicit(&server->stopped, memory_order_acquire) == 0) {
         struct http_req* req = http_server_pop_req(server);
-        LOG_DEBUG("Processing HTTP request %s %s from %s:%d", req->method, req->path, ipv4_str(req->conn->ipv4), req->conn->port);
+        LOG_DEBUG("Processing HTTP request %s %s from %s:%d", req->method, req->path, ipv4_str(req->conn->ipv4),
+                  req->conn->port);
         on_http_req_callback(server->cb_data, req);
     }
     return 0;

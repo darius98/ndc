@@ -161,14 +161,14 @@ void init_write_queue(struct write_queue* queue, struct tcp_write_queue_conf* co
     if (prev_flags < 0) {
         LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
     }
-    if(fcntl(queue->loop_notify_pipe[0], F_SETFD, prev_flags | O_NONBLOCK) < 0) {
+    if (fcntl(queue->loop_notify_pipe[0], F_SETFD, prev_flags | O_NONBLOCK) < 0) {
         LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
     }
     prev_flags = fcntl(queue->loop_notify_pipe[0], F_GETFD);
     if (prev_flags < 0) {
         LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
     }
-    if(fcntl(queue->loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK) < 0) {
+    if (fcntl(queue->loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK) < 0) {
         LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
     }
     init_write_loop(queue);

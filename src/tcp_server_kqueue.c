@@ -47,7 +47,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
             int event_fd = (int)events[i].ident;
             if (event_fd == server->listen_fd) {
                 LOG_DEBUG("Received kevent on TCP server socket (fd=%d)", server->listen_fd);
-                struct tcp_conn* conn = accept_tcp_conn(server);
+                struct tcp_conn *conn = accept_tcp_conn(server);
                 if (conn != 0) {
                     EV_SET(&event, conn->fd, EVFILT_READ, EV_ADD, 0, 0, conn);
                     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
@@ -62,7 +62,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                 if (events[i].flags & EV_EOF) {
                     close_tcp_conn_by_fd(server, event_fd);
                 } else if (events[i].filter & EVFILT_READ) {
-                    struct tcp_conn* conn = (struct tcp_conn *)events[i].udata;
+                    struct tcp_conn *conn = (struct tcp_conn *)events[i].udata;
                     LOG_DEBUG("Received read kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
                               conn->fd);
                     int n_bytes = recv_from_tcp_conn(server, conn);

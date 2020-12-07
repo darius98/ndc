@@ -51,7 +51,7 @@ static void http_404_write_cb(void* data, struct tcp_conn* conn, int err) {
         LOG_ERROR("Failed to write 404 Not found response to request %s %s from connection %s:%d errno=%d (%s)",
                   req->method, req->path, ipv4_str(conn->ipv4), conn->port, err, strerror(err));
     } else {
-        LOG_INFO("%s %s %s 404 Not found", ipv4_str(conn->ipv4), req->method, req->path);
+        log_access(req, 404);
     }
     delete_http_req(req);
 }
@@ -79,7 +79,7 @@ static void http_200_response_body_cb(void* data, struct tcp_conn* conn, int err
         LOG_ERROR("Failed to write file response to request %s %s from connection %s:%d errno=%d (%s)",
                   cb_data->req->method, cb_data->req->path, ipv4_str(conn->ipv4), conn->port, errno, strerror(errno));
     } else {
-        LOG_INFO("%s %s %s 200 OK", ipv4_str(conn->ipv4), cb_data->req->method, cb_data->req->path);
+        log_access(cb_data->req, 200);
     }
     close_file(cb_data->server->cache, cb_data->file);
     delete_http_req(cb_data->req);

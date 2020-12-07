@@ -164,9 +164,27 @@ static void parse_log_level(const char* file, int lineno, int colno, const char*
     }
 }
 
+static void parse_file_path(const char* file, int lineno, int colno, const char* value, void* dst) {
+    int len = strlen(value);
+    if (len == 0) {
+        fprintf(stderr, "Conf file %s:%d:%d expected file path\n", file, lineno, colno);
+        exit(EXIT_FAILURE);
+    }
+    char* path = malloc(len + 1);
+    if (path == 0) {
+        fprintf(stderr, "Conf file %s:%d:%d failed to allocate string of length %d while parsing conf file\n", file,
+                lineno, colno, len);
+        exit(EXIT_FAILURE);
+    }
+    strcpy(path, value);
+    *((const char**)dst) = path;
+}
+
 struct conf load_conf() {
     struct conf conf;
     conf.file_path = get_config_file_path();
+    conf.logging.access_log = "stdout";
+    conf.logging.server_log = "stderr";
     conf.logging.min_level = 0;
     conf.logging.filename_and_lineno = 1;
     conf.file_cache.num_buckets = 23;
@@ -181,8 +199,10 @@ struct conf load_conf() {
     conf.tcp_write_queue.events_batch_size = 2048;
     conf.http.num_workers = 1;
     conf.http.request_buffer_size = 65536;
-#define NUM_CONF_ENTRIES 14
+#define NUM_CONF_ENTRIES 16
     struct conf_entry entries[NUM_CONF_ENTRIES] = {
+        {"logging.access_log", &conf.logging.access_log, parse_file_path, 0},
+        {"logging.server_log", &conf.logging.server_log, parse_file_path, 0},
         {"logging.min_level", &conf.logging.min_level, parse_log_level, 0},
         {"logging.filename_and_lineno", &conf.logging.filename_and_lineno, parse_bool, 0},
         {"file_cache.num_buckets", &conf.file_cache.num_buckets, parse_int, 0},

@@ -7,6 +7,7 @@ services:
     working_dir: /ndc
     environment:
       NDC_IMAGE_NAME: "ubuntu_20_04"
+      NDC_CONF_FILE: "/ndc/config/ndc.conf"
     ports:
       - 1337:1337
     volumes:

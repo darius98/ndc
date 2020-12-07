@@ -4,6 +4,8 @@
 #define NDC_CONF_FILE_ENV_VAR "NDC_CONF_FILE"
 
 struct logging_conf {
+    const char* access_log;
+    const char* server_log;
     int min_level;
     int filename_and_lineno;
 };

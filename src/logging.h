@@ -11,6 +11,9 @@
 
 void init_logging(const struct logging_conf* conf);
 
+struct http_req;
+void log_access(struct http_req* req, int status);
+
 int internal_log_min_level();
 
 void internal_log_lock();
