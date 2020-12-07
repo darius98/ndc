@@ -49,7 +49,7 @@ static void http_404_write_cb(void* data, struct tcp_conn* conn, int err) {
     struct http_req* req = (struct http_req*)data;
     if (err != 0) {
         LOG_ERROR("Failed to write 404 Not found response to request %s %s from connection %s:%d errno=%d (%s)",
-                  req->method, req->path, ipv4_str(conn->ipv4), conn->port, err, strerror(err));
+                  req->method, req->path, ipv4_str(conn->ipv4), conn->port, err, errno_str(err));
     } else {
         log_access(req, 404);
     }
@@ -69,7 +69,7 @@ static void http_200_response_headers_cb(void* data, struct tcp_conn* conn, int 
     struct http_200_cb_data* cb_data = (struct http_200_cb_data*)data;
     if (err != 0) {
         LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
-                  cb_data->req->method, cb_data->req->path, ipv4_str(conn->ipv4), conn->port, err, strerror(err));
+                  cb_data->req->method, cb_data->req->path, ipv4_str(conn->ipv4), conn->port, err, errno_str(err));
     }
 }
 
@@ -77,7 +77,7 @@ static void http_200_response_body_cb(void* data, struct tcp_conn* conn, int err
     struct http_200_cb_data* cb_data = (struct http_200_cb_data*)data;
     if (err != 0) {
         LOG_ERROR("Failed to write file response to request %s %s from connection %s:%d errno=%d (%s)",
-                  cb_data->req->method, cb_data->req->path, ipv4_str(conn->ipv4), conn->port, errno, strerror(errno));
+                  cb_data->req->method, cb_data->req->path, ipv4_str(conn->ipv4), conn->port, errno, errno_str(errno));
     } else {
         log_access(cb_data->req, 200);
     }

@@ -22,7 +22,6 @@ static struct {
     pthread_mutex_t lock;
     char level_name[5];
     char tm_buffer[20];  // Format is YYYY-MM-DD HH:mm:ss, of length 20
-    char ipv4_str_buf[INET_ADDRSTRLEN];
 } logging;
 
 static void log_backtrace(int fd) {
@@ -35,7 +34,7 @@ static void handle_signal_log_fatal(int sig) {
     if (logging.server_log != 0) {
         fprintf(logging.server_log, "Killed by signal %d\n", sig);
         if (fflush(logging.server_log) != 0) {
-            fprintf(logging.server_log, "fflush() failed errno=%d (%s)", errno, strerror(errno));
+            fprintf(logging.server_log, "fflush() failed errno=%d (%s)", errno, errno_str(errno));
         }
         log_backtrace(fileno(logging.server_log));
     }
@@ -52,7 +51,7 @@ static void set_log_file(const char* desc, FILE** file) {
     } else {
         *file = fopen(desc, "a");
         if (*file == 0) {
-            fprintf(stderr, "Failed to open logging file '%s': errno=%d (%s)\n", desc, errno, strerror(errno));
+            fprintf(stderr, "Failed to open logging file '%s': errno=%d (%s)\n", desc, errno, errno_str(errno));
             exit(EXIT_FAILURE);
         }
     }
@@ -76,7 +75,6 @@ void init_logging(const struct logging_conf* conf) {
     logging.level_name[LOG_LEVEL_ERROR] = 'E';
     logging.level_name[LOG_LEVEL_FATAL] = 'F';
     logging.tm_buffer[19] = 0;
-    logging.ipv4_str_buf[INET_ADDRSTRLEN - 1] = 0;
 
     // Install signal handlers
     signal(SIGBUS, handle_signal_log_fatal);
@@ -96,7 +94,7 @@ int internal_log_min_level() {
     return logging.min_level;
 }
 
-void internal_log_lock() {
+static void lock_logs() {
     int err = pthread_mutex_lock(&logging.lock);
     if (err != 0) {
         if (logging.server_log != 0) {
@@ -106,7 +104,7 @@ void internal_log_lock() {
     }
 }
 
-void internal_log_unlock() {
+static void unlock_logs() {
     int err = pthread_mutex_unlock(&logging.lock);
     if (err != 0) {
         if (logging.server_log != 0) {
@@ -123,42 +121,63 @@ static void log_time(FILE* fp) {
     fprintf(fp, "%s.%03ld", logging.tm_buffer, now.tv_nsec / 1000000);
 }
 
-void internal_log_message(const char* filename, int lineno, int level, const char* fmt, ...) {
-    if (logging.server_log != 0) {
-        fprintf(logging.server_log, "[");
-        log_time(logging.server_log);
-        fprintf(logging.server_log, "] %c ", logging.level_name[level]);
-        if (logging.log_filename_and_lineno != 0 && filename != 0) {
-            fprintf(logging.server_log, "(%s:%d) ", filename, lineno);
-        }
-        va_list args;
-        va_start(args, fmt);
-        vfprintf(logging.server_log, fmt, args);
-        fprintf(logging.server_log, "\n");
-    }
+static __thread char strerror_buf[256];
+const char* errno_str(int err) {
+    strerror_r(err, strerror_buf, 256);
+    return strerror_buf;
 }
 
-void internal_log_die() {
-    if (logging.server_log != 0) {
-        if (fflush(logging.server_log) != 0) {
-            fprintf(logging.server_log, "fflush() failed errno=%d (%s)", errno, strerror(errno));
-        }
-        log_backtrace(fileno(logging.server_log));
-    }
-    abort();
-}
-
+static __thread char ipv4_str_buf[INET_ADDRSTRLEN];
 const char* ipv4_str(int ipv4) {
-    inet_ntop(AF_INET, &ipv4, logging.ipv4_str_buf, INET_ADDRSTRLEN);
-    return logging.ipv4_str_buf;
+    inet_ntop(AF_INET, &ipv4, ipv4_str_buf, INET_ADDRSTRLEN);
+    return ipv4_str_buf;
+}
+
+static void log_msg_preamble(const char* filename, int lineno, int level) {
+    fprintf(logging.server_log, "[");
+    log_time(logging.server_log);
+    fprintf(logging.server_log, "] %c ", logging.level_name[level]);
+    if (logging.log_filename_and_lineno != 0 && filename != 0) {
+        fprintf(logging.server_log, "(%s:%d) ", filename, lineno);
+    }
+}
+
+#define LOG_MSG_BODY(file, fmt) \
+    va_list args;               \
+    va_start(args, fmt);        \
+    vfprintf(file, fmt, args);  \
+    fprintf(file, "\n")
+
+void internal_log_message(const char* filename, int lineno, int level, const char* fmt, ...) {
+    if (logging.server_log == 0) {
+        return;
+    }
+    lock_logs();
+    log_msg_preamble(filename, lineno, level);
+    LOG_MSG_BODY(logging.server_log, fmt);
+    unlock_logs();
+}
+
+void internal_log_fatal_message(const char* filename, int lineno, int level, const char* fmt, ...) {
+    if (logging.server_log == 0) {
+        abort();
+    }
+    lock_logs();
+    log_msg_preamble(filename, lineno, level);
+    LOG_MSG_BODY(logging.server_log, fmt);
+    if (fflush(logging.server_log) != 0) {
+        fprintf(logging.server_log, "fflush() failed errno=%d (%s)\n", errno, errno_str(errno));
+    }
+    log_backtrace(fileno(logging.server_log));
+    abort();
 }
 
 void log_access(struct http_req* req, int status) {
     if (logging.access_file != 0) {
-        internal_log_lock();
+        lock_logs();
         fprintf(logging.access_file, "%s - - [", ipv4_str(req->conn->ipv4));
         log_time(logging.access_file);
         fprintf(logging.access_file, "] \"%s %s %s\" %d\n", req->method, req->path, req->version, status);
-        internal_log_unlock();
+        unlock_logs();
     }
 }

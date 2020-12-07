@@ -95,7 +95,7 @@ static struct mapped_file* map_file(char* path) {
 
     file->fd = open(path, O_RDONLY);
     if (file->fd < 0) {
-        LOG_ERROR("Failed to open file %s: open() failed errno=%d (%s)", path, errno, strerror(errno));
+        LOG_ERROR("Failed to open file %s: open() failed errno=%d (%s)", path, errno, errno_str(errno));
         free(file->path);
         free(file);
         return 0;
@@ -103,9 +103,9 @@ static struct mapped_file* map_file(char* path) {
 
     struct stat file_stat;
     if (fstat(file->fd, &file_stat) < 0) {
-        LOG_ERROR("Failed to open file %s: fstat() failed errno=%d (%s)", path, errno, strerror(errno));
+        LOG_ERROR("Failed to open file %s: fstat() failed errno=%d (%s)", path, errno, errno_str(errno));
         if (close(file->fd) < 0) {
-            LOG_ERROR("Failed to close file %s: close() failed errno=%d (%s)", path, errno, strerror(errno));
+            LOG_ERROR("Failed to close file %s: close() failed errno=%d (%s)", path, errno, errno_str(errno));
         }
         free(file->path);
         free(file);
@@ -115,9 +115,9 @@ static struct mapped_file* map_file(char* path) {
     file->content_len = file_stat.st_size;
     file->content = mmap(0, file->content_len, PROT_READ, MAP_PRIVATE, file->fd, 0);
     if (file->content == MAP_FAILED) {
-        LOG_ERROR("Failed to open file %s: mmap() failed errno=%d (%s)", path, errno, strerror(errno));
+        LOG_ERROR("Failed to open file %s: mmap() failed errno=%d (%s)", path, errno, errno_str(errno));
         if (close(file->fd) < 0) {
-            LOG_ERROR("Failed to close file %s: close() failed errno=%d (%s)", path, errno, strerror(errno));
+            LOG_ERROR("Failed to close file %s: close() failed errno=%d (%s)", path, errno, errno_str(errno));
         }
         free(file->path);
         free(file);
@@ -128,10 +128,10 @@ static struct mapped_file* map_file(char* path) {
 
 static void unmap_file(struct mapped_file* file) {
     if (close(file->fd) < 0) {
-        LOG_ERROR("Error closing file %s: close() failed errno=%d (%s)", file->path, errno, strerror(errno));
+        LOG_ERROR("Error closing file %s: close() failed errno=%d (%s)", file->path, errno, errno_str(errno));
     }
     if (munmap(file->content, file->content_len) < 0) {
-        LOG_ERROR("Error closing file %s: munmap() failed errno=%d (%s)", file->path, errno, strerror(errno));
+        LOG_ERROR("Error closing file %s: munmap() failed errno=%d (%s)", file->path, errno, errno_str(errno));
     }
     free(file->path);
 }

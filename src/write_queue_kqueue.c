@@ -10,13 +10,13 @@
 void init_write_loop(struct write_queue* queue) {
     queue->loop_fd = kqueue();
     if (queue->loop_fd < 0) {
-        LOG_FATAL("Failed to initialize write worker loop, kqueue() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("Failed to initialize write worker loop, kqueue() failed errno=%d (%s)", errno, errno_str(errno));
     }
     struct kevent ev;
     EV_SET(&ev, queue->loop_notify_pipe[0], EVFILT_READ, EV_ADD, 0, 0, 0);
     if (kevent(queue->loop_fd, &ev, 1, 0, 0, 0) < 0) {
         LOG_FATAL("Failed to attach notify pipe to write worker loop, kevent() failed errno=%d (%s)", errno,
-                  strerror(errno));
+                  errno_str(errno));
     }
 }
 
@@ -30,7 +30,7 @@ void run_write_loop(struct write_queue* queue) {
         int n_ev = kevent(queue->loop_fd, 0, 0, events, queue->loop_max_events, 0);
         if (n_ev < 0) {
             // TODO: Handle error better.
-            LOG_FATAL("Write worker loop: kevent() failed errno=%d (%s)", errno, strerror(errno));
+            LOG_FATAL("Write worker loop: kevent() failed errno=%d (%s)", errno, errno_str(errno));
         }
 
         if (n_ev == 0) {
@@ -53,7 +53,7 @@ int write_loop_add_fd(struct write_queue* queue, int fd) {
     struct kevent ev;
     EV_SET(&ev, fd, EVFILT_WRITE, EV_ADD, 0, 0, 0);
     if (kevent(queue->loop_fd, &ev, 1, 0, 0, 0) < 0) {
-        LOG_ERROR("kevent() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_ERROR("kevent() failed errno=%d (%s)", errno, errno_str(errno));
         return -1;
     }
     return 0;

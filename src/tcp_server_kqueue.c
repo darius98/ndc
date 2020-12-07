@@ -10,17 +10,17 @@
 void run_tcp_server_loop(struct tcp_server *server) {
     int kqueue_fd = kqueue();
     if (kqueue_fd < 0) {
-        LOG_FATAL("Failed to start TCP server: kqueue() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("Failed to start TCP server: kqueue() failed errno=%d (%s)", errno, errno_str(errno));
     }
 
     struct kevent event;
     EV_SET(&event, server->listen_fd, EVFILT_READ, EV_ADD, 0, 0, 0);
     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
-        LOG_FATAL("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, errno_str(errno));
     }
     EV_SET(&event, server->notify_pipe[0], EVFILT_READ, EV_ADD, 0, 0, 0);
     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
-        LOG_FATAL("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("Failed to start TCP server: kevent() failed errno=%d (%s)", errno, errno_str(errno));
     }
 
     struct kevent *events = malloc(sizeof(struct kevent) * server->conf->events_batch_size);
@@ -35,7 +35,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
         int n_ev = kevent(kqueue_fd, 0, 0, events, server->conf->events_batch_size, 0);
         if (n_ev < 0) {
             // TODO: Handle error better.
-            LOG_FATAL("Server: kevent() failed errno=%d (%s)", errno, strerror(errno));
+            LOG_FATAL("Server: kevent() failed errno=%d (%s)", errno, errno_str(errno));
         }
 
         if (n_ev == 0) {
@@ -52,7 +52,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                     EV_SET(&event, conn->fd, EVFILT_READ, EV_ADD, 0, 0, conn);
                     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
                         LOG_ERROR("Could not accept TCP connection from %s:%d (fd=%d), kevent() failed errno=%d (%s)",
-                                  ipv4_str(conn->ipv4), conn->port, conn->fd, errno, strerror(errno));
+                                  ipv4_str(conn->ipv4), conn->port, conn->fd, errno, errno_str(errno));
                         close_tcp_conn(server, conn);
                     }
                 }

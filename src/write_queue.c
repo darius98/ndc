@@ -155,21 +155,21 @@ void init_write_queue(struct write_queue* queue, struct tcp_write_queue_conf* co
     init_tasks_list_table(&queue->task_lists, conf->num_buckets, conf->bucket_initial_capacity);
     ff_pthread_mutex_init(&queue->lock, 0);
     if (pipe(queue->loop_notify_pipe) < 0) {
-        LOG_FATAL("pipe() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("pipe() failed errno=%d (%s)", errno, errno_str(errno));
     }
     int prev_flags = fcntl(queue->loop_notify_pipe[0], F_GETFD);
     if (prev_flags < 0) {
-        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, errno_str(errno));
     }
     if (fcntl(queue->loop_notify_pipe[0], F_SETFD, prev_flags | O_NONBLOCK) < 0) {
-        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, errno_str(errno));
     }
     prev_flags = fcntl(queue->loop_notify_pipe[0], F_GETFD);
     if (prev_flags < 0) {
-        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, errno_str(errno));
     }
     if (fcntl(queue->loop_notify_pipe[1], F_SETFD, prev_flags | O_NONBLOCK) < 0) {
-        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("fcntl() failed errno=%d (%s)", errno, errno_str(errno));
     }
     init_write_loop(queue);
     ff_pthread_create(&queue->worker, 0, write_queue_worker, queue);
@@ -201,7 +201,7 @@ void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn) {
     int ret = write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
     if (ret != sizeof(struct write_worker_notification)) {
         if (ret < 0) {
-            LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, strerror(errno));
+            LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, errno_str(errno));
         } else {
             LOG_FATAL("Failed to write() to TCP server notify pipe, wrote %d out of %d bytes.", ret,
                       (int)sizeof(struct write_worker_notification));
@@ -249,7 +249,7 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
     int ret = write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
     if (ret != sizeof(struct write_worker_notification)) {
         if (ret < 0) {
-            LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, strerror(errno));
+            LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, errno_str(errno));
         } else {
             LOG_FATAL("Failed to write() to TCP server notify pipe, wrote %d out of %d bytes.", ret,
                       (int)sizeof(struct write_worker_notification));
@@ -268,7 +268,7 @@ void write_queue_process_writes(struct write_queue* queue, int fd) {
     while (task != 0) {
         ssize_t chunk_sz = write(fd, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
         if (chunk_sz < 0 && errno != EWOULDBLOCK) {
-            LOG_ERROR("write() failed with errno=%d (%s)", errno, strerror(errno));
+            LOG_ERROR("write() failed with errno=%d (%s)", errno, errno_str(errno));
             write_queue_pop(queue, task_list, errno);
             close_tcp_conn(queue->tcp_server, task_list->conn);
             break;
@@ -290,7 +290,7 @@ void write_queue_process_notification(struct write_queue* queue) {
     ssize_t n_bytes = read(queue->loop_notify_pipe[0], &notification, sizeof(struct write_worker_notification));
     if (n_bytes != sizeof(struct write_worker_notification)) {
         LOG_FATAL("Write worker loop: failed to read notification from pipe, returned %d, errno=%d (%s)", (int)n_bytes,
-                  errno, strerror(errno));
+                  errno, errno_str(errno));
     }
     if (notification.type == ww_notify_execute) {
         write_queue_process_writes(queue, notification.fd);

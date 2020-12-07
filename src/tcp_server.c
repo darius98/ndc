@@ -74,12 +74,12 @@ void init_tcp_server(struct tcp_server* server, int port, struct tcp_server_conf
     server->port = port;
 
     if (pipe(server->notify_pipe) < 0) {
-        LOG_FATAL("pipe() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("pipe() failed errno=%d (%s)", errno, errno_str(errno));
     }
 
     server->listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (server->listen_fd < 0) {
-        LOG_FATAL("socket() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("socket() failed errno=%d (%s)", errno, errno_str(errno));
     }
 
     struct sockaddr_in server_addr;
@@ -88,11 +88,11 @@ void init_tcp_server(struct tcp_server* server, int port, struct tcp_server_conf
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(port);
     if (bind(server->listen_fd, (const struct sockaddr*)&server_addr, sizeof(struct sockaddr_in)) < 0) {
-        LOG_FATAL("bind() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("bind() failed errno=%d (%s)", errno, errno_str(errno));
     }
 
     if (listen(server->listen_fd, conf->backlog) < 0) {
-        LOG_FATAL("listen() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_FATAL("listen() failed errno=%d (%s)", errno, errno_str(errno));
     }
 }
 
@@ -102,7 +102,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     socklen_t client_addr_len = sizeof(struct sockaddr_in);
     fd = accept(server->listen_fd, (struct sockaddr*)&client_addr, &client_addr_len);
     if (fd < 0) {
-        LOG_ERROR("Failed to accept new TCP connection: accept() failed errno=%d (%s)", errno, strerror(errno));
+        LOG_ERROR("Failed to accept new TCP connection: accept() failed errno=%d (%s)", errno, errno_str(errno));
         return 0;
     }
 
@@ -114,7 +114,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         LOG_ERROR("Failed to allocate memory for new connection: %s:%d", ipv4_str(ipv4), port);
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
-                      port, errno, strerror(errno));
+                      port, errno, errno_str(errno));
         }
         return 0;
     }
@@ -127,7 +127,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         LOG_ERROR("Failed to allocate buffer for new connection: %s:%d", ipv4_str(ipv4), port);
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
-                      port, errno, strerror(errno));
+                      port, errno, errno_str(errno));
         }
         free(conn);
         return 0;
@@ -140,7 +140,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         LOG_ERROR("Failed to grow tcp connection table bucket");
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
-                      port, errno, strerror(errno));
+                      port, errno, errno_str(errno));
         }
         free(conn->buf);
         free(conn);
@@ -150,7 +150,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         tcp_conn_table_erase(&server->conn_table, conn);
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
-                      port, errno, strerror(errno));
+                      port, errno, errno_str(errno));
         }
         free(conn->buf);
         free(conn);
@@ -161,7 +161,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         write_queue_remove_conn(&server->w_queue, conn);
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
-                      port, errno, strerror(errno));
+                      port, errno, errno_str(errno));
         }
         free(conn->buf);
         free(conn);
@@ -175,7 +175,7 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     int num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
     if (num_bytes < 0) {
         LOG_ERROR("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
-                  conn->fd, errno, strerror(errno));
+                  conn->fd, errno, errno_str(errno));
         return -1;
     }
     if (num_bytes == 0) {
@@ -221,7 +221,7 @@ void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     int ret = write(server->notify_pipe[1], &notification, sizeof(struct tcp_server_notification));
     if (ret != sizeof(struct tcp_server_notification)) {
         if (ret < 0) {
-            LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, strerror(errno));
+            LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, errno_str(errno));
         } else {
             LOG_FATAL("Failed to write() to TCP server notify pipe, wrote %d out of %d bytes.", ret,
                       (int)sizeof(struct tcp_server_notification));
@@ -250,7 +250,7 @@ void tcp_server_process_notification(struct tcp_server* server) {
     ssize_t n_bytes = read(server->notify_pipe[0], &notification, sizeof(struct tcp_server_notification));
     if (n_bytes != sizeof(struct tcp_server_notification)) {
         LOG_FATAL("TCP server: failed to read from notify pipe, returned %d, errno=%d (%s)", (int)n_bytes, errno,
-                  strerror(errno));
+                  errno_str(errno));
     }
     if (notification.type == ts_notify_close_conn) {
         struct tcp_conn* conn = notification.data;
@@ -269,7 +269,7 @@ void tcp_conn_dec_refcount(struct tcp_conn* conn) {
                   conn->port, conn->fd);
         if (close(conn->fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", conn->fd,
-                      ipv4_str(conn->ipv4), conn->port, errno, strerror(errno));
+                      ipv4_str(conn->ipv4), conn->port, errno, errno_str(errno));
         }
         free(conn->buf);
         free(conn);
