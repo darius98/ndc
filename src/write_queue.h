@@ -19,14 +19,12 @@ struct write_task {
 };
 
 struct write_task_list {
-    _Atomic(int) ref_count;
     struct tcp_conn* conn;
     struct write_task* head;
     struct write_task* tail;
 };
 
 struct write_task_list_table_bucket {
-    pthread_mutex_t task_list_lock;
     int len;
     int cap;
     struct write_task_list** entries;
