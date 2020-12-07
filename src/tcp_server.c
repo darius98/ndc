@@ -151,7 +151,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     conn->user_data = 0;
     conn->ipv4 = ipv4;
     conn->port = port;
-    conn->is_closed = 0;
+    atomic_store_explicit(&conn->is_closed, 0, memory_order_release);
     if (tcp_conn_table_insert(&server->conn_table, conn) < 0) {
         LOG_ERROR("Failed to grow tcp connection table bucket");
         if (close(fd) < 0) {

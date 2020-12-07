@@ -26,14 +26,15 @@ struct write_task_list {
 };
 
 struct write_task_list_table_bucket {
+    pthread_mutex_t lock;
+    pthread_mutex_t task_list_lock;
     int len;
     int cap;
     struct write_task_list** entries;
 };
 
 struct write_task_list_table {
-    pthread_mutex_t lock;
-    int size;
+    _Atomic(int) size;
     int n_buckets;
     struct write_task_list_table_bucket* buckets;
 };
@@ -41,7 +42,6 @@ struct write_task_list_table {
 struct write_queue {
     struct tcp_server* tcp_server;
     struct write_task_list_table task_lists;
-    pthread_mutex_t lock;
     int loop_notify_pipe[2];
     int loop_fd;
     int loop_max_events;
