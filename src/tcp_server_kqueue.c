@@ -1,7 +1,6 @@
 #include <errno.h>
 #include <stdatomic.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/event.h>
 
 #include "logging.h"
@@ -66,15 +65,10 @@ void run_tcp_server_loop(struct tcp_server *server) {
                     LOG_DEBUG("Received read kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
                               conn->fd);
                     int n_bytes = recv_from_tcp_conn(server, conn);
-                    if (n_bytes <= 0) {
-                        if (n_bytes == 0) {
-                            LOG_WARN("Spurious wake-up of connection %s:%d (fd=%d), had no bytes to read",
-                                     ipv4_str(conn->ipv4), conn->port, conn->fd);
-                        } else {
-                            LOG_ERROR("Closing TCP connection to %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
-                                      conn->fd);
-                            close_tcp_conn(server, conn);
-                        }
+                    if (n_bytes < 0) {
+                        LOG_ERROR("Closing TCP connection to %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
+                                  conn->fd);
+                        close_tcp_conn(server, conn);
                     }
                 } else {
                     LOG_ERROR("Received unexpected event from kevent() fd=%d, event.flags=%d, event.filter=%u",

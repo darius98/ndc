@@ -10,6 +10,7 @@ struct tcp_conn {
     int buf_len;
     int buf_cap;
     char* buf;
+    void* tls;
     void* user_data;
     int ipv4;
     int port;
@@ -35,6 +36,7 @@ struct tcp_server {
     int listen_fd;
     int notify_pipe[2];
     int port;
+    void* tls_ctx;
     void* cb_data;
 };
 

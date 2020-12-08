@@ -2,7 +2,9 @@ version: '3'
 
 services:
   ndc_ubuntu:
-    image: darius98/lightcxx_ubuntu_20_04
+    build:
+      context: .
+      dockerfile: Dockerfile
     command: /ndc/scripts/run_in_docker.sh
     working_dir: /ndc
     environment:

@@ -5,10 +5,12 @@
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "fd.h"
 #include "logging.h"
+#include "tls.h"
 #include "write_queue.h"
 
 static void init_tcp_conn_table(struct tcp_conn_table* conn_table, int n_buckets, int bucket_init_cap) {
@@ -52,6 +54,7 @@ static void tcp_conn_table_erase(struct tcp_conn_table* conn_table, struct tcp_c
             bucket->entries[i] = bucket->entries[bucket->size - 1];
             bucket->size -= 1;
             conn_table->size -= 1;
+            break;
         }
     }
 }
@@ -71,6 +74,7 @@ void init_tcp_server(struct tcp_server* server, int port, struct tcp_server_conf
                      struct tcp_write_queue_conf* w_queue_conf) {
     init_tcp_conn_table(&server->conn_table, conf->num_buckets, conf->bucket_initial_capacity);
     init_write_queue(&server->w_queue, w_queue_conf, server);
+    server->tls_ctx = init_tls(conf->tls_cert_pem);
     server->conf = conf;
     server->port = port;
 
@@ -148,12 +152,27 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         free(conn);
         return 0;
     }
+    if (server->tls_ctx != 0) {
+        conn->tls = new_tls_for_conn(server->tls_ctx, fd);
+        if (conn->tls == 0) {
+            if (close(fd) < 0) {
+                LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
+                          port, errno, errno_str(errno));
+            }
+            free(conn->buf);
+            free(conn);
+            return 0;
+        }
+    } else {
+        conn->tls = 0;
+    }
     conn->user_data = 0;
     conn->ipv4 = ipv4;
     conn->port = port;
     atomic_store_explicit(&conn->is_closed, 0, memory_order_release);
     if (tcp_conn_table_insert(&server->conn_table, conn) < 0) {
         LOG_ERROR("Failed to grow tcp connection table bucket");
+        free_tls(conn->tls);
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
                       port, errno, errno_str(errno));
@@ -164,6 +183,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     }
     if (write_queue_add_conn(&server->w_queue, conn) < 0) {
         tcp_conn_table_erase(&server->conn_table, conn);
+        free_tls(conn->tls);
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
                       port, errno, errno_str(errno));
@@ -173,8 +193,9 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         return 0;
     }
     if (tcp_conn_after_open_callback(server->cb_data, conn) < 0) {
-        tcp_conn_table_erase(&server->conn_table, conn);
         write_queue_remove_conn(&server->w_queue, conn);
+        tcp_conn_table_erase(&server->conn_table, conn);
+        free_tls(conn->tls);
         if (close(fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
                       port, errno, errno_str(errno));
@@ -188,14 +209,19 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
 }
 
 int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
-    int num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
-    if (num_bytes < 0) {
-        LOG_ERROR("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
-                  conn->fd, errno, errno_str(errno));
-        return -1;
+    int num_bytes;
+    if (conn->tls == 0) {
+        num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
+        if (num_bytes < 0) {
+            LOG_ERROR("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
+                      conn->fd, errno, errno_str(errno));
+            return -1;
+        }
+    } else {
+        num_bytes = recv_tls(conn->tls, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len);
     }
-    if (num_bytes == 0) {
-        return 0;
+    if (num_bytes <= 0) {
+        return num_bytes;
     }
     LOG_DEBUG("Received %d bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf_len += num_bytes;
@@ -248,7 +274,6 @@ void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
 void close_tcp_conn_by_fd(struct tcp_server* server, int fd) {
     struct tcp_conn* conn = find_tcp_conn(server, fd);
     if (conn == 0) {
-        LOG_DEBUG("Trying to close TCP connection that is not in tcp connections table fd=%d.", fd);
         return;
     }
     if (atomic_exchange_explicit(&conn->is_closed, 1, memory_order_acq_rel) == 1) {
@@ -283,6 +308,7 @@ void tcp_conn_dec_refcount(struct tcp_conn* conn) {
     if (ref_cnt == 1) {
         LOG_DEBUG("Reclaiming memory and file descriptor for tcp connection %s:%d (fd=%d)", ipv4_str(conn->ipv4),
                   conn->port, conn->fd);
+        free_tls(conn->tls);
         if (close(conn->fd) < 0) {
             LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", conn->fd,
                       ipv4_str(conn->ipv4), conn->port, errno, errno_str(errno));

@@ -198,12 +198,13 @@ struct conf load_conf() {
     conf.tcp_server.bucket_initial_capacity = 4;
     conf.tcp_server.events_batch_size = 2048;
     conf.tcp_server.connection_buffer_size = 65536;
+    conf.tcp_server.tls_cert_pem = "none";
     conf.tcp_write_queue.num_buckets = 23;
     conf.tcp_write_queue.bucket_initial_capacity = 4;
     conf.tcp_write_queue.events_batch_size = 2048;
     conf.http.num_workers = 1;
     conf.http.request_buffer_size = 65536;
-#define NUM_CONF_ENTRIES 16
+#define NUM_CONF_ENTRIES 17
     struct conf_entry entries[NUM_CONF_ENTRIES] = {
         {"logging.access_log", &conf.logging.access_log, parse_file_path, 0},
         {"logging.server_log", &conf.logging.server_log, parse_file_path, 0},
@@ -216,6 +217,7 @@ struct conf load_conf() {
         {"tcp_server.bucket_initial_capacity", &conf.tcp_server.bucket_initial_capacity, parse_int, 0},
         {"tcp_server.events_batch_size", &conf.tcp_server.events_batch_size, parse_int, 0},
         {"tcp_server.connection_buffer_size", &conf.tcp_server.connection_buffer_size, parse_int, 0},
+        {"tcp_server.tls_cert_pem", &conf.tcp_server.tls_cert_pem, parse_file_path, 0},
         {"tcp_write_queue.num_buckets", &conf.tcp_write_queue.num_buckets, parse_int, 0},
         {"tcp_write_queue.bucket_initial_capacity", &conf.tcp_write_queue.bucket_initial_capacity, parse_int, 0},
         {"tcp_write_queue.events_batch_size", &conf.tcp_write_queue.events_batch_size, parse_int, 0},

@@ -21,6 +21,7 @@ struct tcp_server_conf {
     int bucket_initial_capacity;
     int events_batch_size;
     int connection_buffer_size;
+    char* tls_cert_pem;
 };
 
 struct tcp_write_queue_conf {

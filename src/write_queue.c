@@ -9,6 +9,7 @@
 #include "fd.h"
 #include "logging.h"
 #include "tcp_server.h"
+#include "tls.h"
 
 static void init_tasks_list_table(struct write_task_list_table* table, int n_buckets, int bucket_init_cap) {
     atomic_store_explicit(&table->size, 0, memory_order_release);
@@ -233,13 +234,24 @@ void write_queue_process_writes(struct write_queue* queue, int fd) {
     }
     struct write_task* task = task_list->head;
     while (task != 0) {
-        ssize_t chunk_sz = write(fd, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
-        if (chunk_sz < 0 && errno != EWOULDBLOCK) {
-            LOG_ERROR("write() failed with errno=%d (%s)", errno, errno_str(errno));
-            pop_task(task_list, errno);
-            close_tcp_conn(queue->tcp_server, task_list->conn);
-            break;
-        } else if (chunk_sz > 0) {
+        ssize_t chunk_sz;
+        if (task_list->conn->tls == 0) {
+            chunk_sz = write(fd, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
+            if (chunk_sz < 0 && errno != EWOULDBLOCK) {
+                LOG_ERROR("write() failed with errno=%d (%s)", errno, errno_str(errno));
+                pop_task(task_list, errno);
+                close_tcp_conn(queue->tcp_server, task_list->conn);
+                break;
+            }
+        } else {
+            chunk_sz = write_tls(task_list->conn->tls, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
+            if (chunk_sz < 0) {
+                pop_task(task_list, errno);
+                close_tcp_conn(queue->tcp_server, task_list->conn);
+                break;
+            }
+        }
+        if (chunk_sz > 0) {
             LOG_DEBUG("Wrote %d bytes to %s:%d", (int)chunk_sz, ipv4_str(task_list->conn->ipv4), task_list->conn->port);
             task->buf_crs += chunk_sz;
             if (task->buf_crs == task->buf_len) {

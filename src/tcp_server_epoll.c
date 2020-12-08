@@ -47,12 +47,15 @@ void run_tcp_server_loop(struct tcp_server *server) {
         }
 
         for (int i = 0; i < n_ev; i++) {
-            int event_fd = (int)events[i].data.fd;
+            if ((events[i].events & EPOLLIN) == 0) {
+                continue; // TODO: Do something with EPOLLRDHUP
+            }
+            int event_fd = events[i].data.fd;
             if (event_fd == server->listen_fd) {
                 LOG_DEBUG("Received epoll event on TCP server socket (fd=%d)", server->listen_fd);
                 conn = accept_tcp_conn(server);
                 if (conn != 0) {
-                    event.events = EPOLLIN | EPOLLET;
+                    event.events = EPOLLIN; // TODO: | EPOLLET;
                     event.data.fd = conn->fd;
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn->fd, &event) < 0) {
                         LOG_ERROR(

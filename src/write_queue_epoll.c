@@ -5,7 +5,6 @@
 #include <unistd.h>
 
 #include "logging.h"
-#include "tcp_server.h"
 #include "write_queue.h"
 
 void init_write_loop(struct write_queue* queue) {
@@ -42,6 +41,9 @@ void run_write_loop(struct write_queue* queue) {
         }
 
         for (int i = 0; i < n_ev; i++) {
+            if ((events[i].events & EPOLLIN) == 0) {
+                continue;
+            }
             int event_fd = (int)events[i].data.fd;
             if (event_fd == queue->loop_notify_pipe[0]) {
                 write_queue_process_notification(queue);
@@ -54,7 +56,7 @@ void run_write_loop(struct write_queue* queue) {
 
 int write_loop_add_fd(struct write_queue* queue, int fd) {
     struct epoll_event event;
-    event.events = EPOLLIN | EPOLLET;
+    event.events = EPOLLIN; // TODO: | EPOLLET;
     event.data.fd = fd;
     if (epoll_ctl(queue->loop_fd, EPOLL_CTL_ADD, fd, &event) < 0) {
         LOG_ERROR("epoll_ctl() failed errno=%d (%s)", errno, errno_str(errno));
