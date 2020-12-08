@@ -85,6 +85,8 @@ static void parse_conf_line(const char* file, int lineno, char* line, struct con
         fprintf(stderr, "Conf file %s:%d:1 duplicate key '%s'.\n", file, lineno, key);
         exit(EXIT_FAILURE);
     }
+    char* save_ptr;
+    value = strtok_r(value, "\n\r\t\v #", &save_ptr);
     entry->parse(file, lineno, (int)(value - line + 1), value, entry->dst);
     entry->loaded = 1;
 }
