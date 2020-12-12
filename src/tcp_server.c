@@ -70,8 +70,8 @@ struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
     return 0;
 }
 
-void init_tcp_server(struct tcp_server* server, int port, struct tcp_server_conf* conf,
-                     struct tcp_write_queue_conf* w_queue_conf) {
+void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
+                     const struct tcp_write_queue_conf* w_queue_conf) {
     init_tcp_conn_table(&server->conn_table, conf->num_buckets, conf->bucket_initial_capacity);
     init_write_queue(&server->w_queue, w_queue_conf, server);
     server->tls_ctx = init_tls(conf->tls_cert_pem);
@@ -209,6 +209,12 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
 }
 
 int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
+    if (atomic_load_explicit(&conn->is_closed, memory_order_acquire) != 0) {
+        LOG_DEBUG("Connection %s:%d (fd=%d) is already closed, ignoring recv request", ipv4_str(conn->ipv4), conn->port,
+                  conn->fd);
+        return 0;
+    }
+
     int num_bytes;
     if (conn->tls == 0) {
         num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);

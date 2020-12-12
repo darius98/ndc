@@ -10,7 +10,7 @@
 
 #include "logging.h"
 
-void init_file_cache(struct file_cache* cache, struct file_cache_conf* conf) {
+void init_file_cache(struct file_cache* cache, const struct file_cache_conf* conf) {
     ff_pthread_mutex_init(&cache->lock, 0);
     cache->size = 0;
     cache->n_buckets = conf->num_buckets;

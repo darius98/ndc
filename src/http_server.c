@@ -109,7 +109,7 @@ static struct http_req* new_http_req(struct http_server* server, struct tcp_conn
     return req;
 }
 
-static int safe_parse_unsigned_int(char* start, char* end) {
+static int safe_parse_unsigned_int(const char* start, const char* end) {
     // Skip any whitespace
     while (start != end && isspace(*start)) {
         ++start;
@@ -134,7 +134,7 @@ static void try_parse_content_length_header(struct http_req* req, char* start, c
     }
 }
 
-static char* append_to_http_req(struct http_req* req, char* start, char* end) {
+static char* append_to_http_req(struct http_req* req, const char* start, const char* end) {
     int len = end - start;
     if (len + 1 > req->buf_cap - req->buf_len) {
         LOG_ERROR("Received HTTP request larger than %d bytes from %s:%d, will close connection", req->buf_cap,

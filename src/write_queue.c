@@ -119,7 +119,8 @@ static void* write_queue_worker(void* arg) {
     return 0;
 }
 
-void init_write_queue(struct write_queue* queue, struct tcp_write_queue_conf* conf, struct tcp_server* tcp_server) {
+void init_write_queue(struct write_queue* queue, const struct tcp_write_queue_conf* conf,
+                      struct tcp_server* tcp_server) {
     queue->tcp_server = tcp_server;
     queue->loop_max_events = conf->events_batch_size;
     init_tasks_list_table(&queue->task_lists, conf->num_buckets, conf->bucket_initial_capacity);
@@ -148,7 +149,7 @@ struct write_worker_notification {
     struct write_task* task;
 };
 
-static void write_notification(struct write_queue* queue, struct  write_worker_notification notification) {
+static void write_notification(struct write_queue* queue, struct write_worker_notification notification) {
     int ret = write(queue->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
     if (ret != sizeof(struct write_worker_notification)) {
         if (ret < 0) {
@@ -201,7 +202,7 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
     notification.task = task;
     notification.type = ww_notify_execute;
     write_notification(queue, notification);
-    tcp_conn_inc_refcount(conn); // To make sure the connection stays alive until push_task is executed.
+    tcp_conn_inc_refcount(conn);  // To make sure the connection stays alive until push_task is executed.
 }
 
 static int push_task(struct write_queue* queue, struct tcp_conn* conn, struct write_task* task, int fd) {

@@ -32,7 +32,7 @@ struct tcp_conn_table {
 struct tcp_server {
     struct tcp_conn_table conn_table;
     struct write_queue w_queue;
-    struct tcp_server_conf* conf;
+    const struct tcp_server_conf* conf;
     int listen_fd;
     int notify_pipe[2];
     int port;
@@ -41,8 +41,8 @@ struct tcp_server {
 };
 
 /// Initialize a TCP server. Note: Aborts on failure.
-void init_tcp_server(struct tcp_server* server, int port, struct tcp_server_conf* conf,
-                     struct tcp_write_queue_conf* w_queue_conf);
+void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
+                     const struct tcp_write_queue_conf* w_queue_conf);
 
 struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 

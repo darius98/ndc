@@ -11,6 +11,7 @@ check_include_files("sys/event.h" USE_KQUEUE)
 check_include_files("sys/epoll.h" USE_EPOLL)
 
 set(ndc_sources
+        src/app.c
         src/conf.c
         src/fd.c
         src/ff_pthread.c
