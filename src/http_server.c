@@ -100,7 +100,9 @@ static struct http_req* new_http_req(struct http_server* server, struct tcp_conn
     req->conn = conn;
     tcp_conn_inc_refcount(conn);
 
-    req->method = 0;
+    req->flags = 0;
+    req->parse_state = req_parse_state_method;
+    req->method = req->buf;
     req->path = 0;
     req->version = 0;
     req->body_len = -1;
@@ -161,42 +163,41 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
     char* initial_buf = buf;
     while (1) {
         struct http_req* req = conn->user_data;
-        if (req->method == 0) {
+        if (req->parse_state <= req_parse_state_method) {
             char* end = find_next_space(buf);
             if (end == 0) {
                 return buf - initial_buf;
             }
-            char* method = append_to_http_req(req, buf, end);
-            if (method == 0) {
+            if (append_to_http_req(req, buf, end) == 0) {
                 return -1;
             }
-            req->method = method;
             buf = end + 1;
+            req->parse_state = req_parse_state_path;
+            req->path = req->buf + req->buf_len;
         }
-        if (req->path == 0) {
+        if (req->parse_state <= req_parse_state_path) {
             char* end = find_next_space(buf);
             if (end == 0) {
                 return buf - initial_buf;
             }
-            char* path = append_to_http_req(req, buf, end);
-            if (path == 0) {
+            if (append_to_http_req(req, buf, end) == 0) {
                 return -1;
             }
-            req->path = path;
             buf = end + 1;
+            req->parse_state = req_parse_state_version;
+            req->version = req->buf + req->buf_len;
         }
-        if (req->version == 0) {
+        if (req->parse_state <= req_parse_state_version) {
             char* end = find_next_clrf(buf);
             if (end == 0) {
                 return buf - initial_buf;
             }
-            char* version = append_to_http_req(req, buf, end);
-            if (version == 0) {
+            if (append_to_http_req(req, buf, end) == 0) {
                 return -1;
             }
-            req->version = version;
-            req->headers = req->version + (end - buf) + 1;
             buf = end + 2;
+            req->parse_state = req_parse_state_headers;
+            req->headers = req->buf + req->buf_len;
         }
         while (1) {
             char* end = find_next_clrf(buf);
@@ -215,7 +216,8 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
             buf = end + 2;
             req->body = req->buf + req->buf_len;
         }
-        if (req->body_len != -1) {
+        req->parse_state = req_parse_state_body;
+        if (req->body_len > 0) {
             int body_offset = req->body - req->buf;
             int body_len_read = req->buf_len - body_offset;
             int body_len_left = req->body_len - body_len_read;
@@ -236,6 +238,7 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
                 }
             }
         }
+        req->parse_state = req_parse_state_done;
         // The request is fully parsed. Add it to the queue.
         http_server_push_req(server, req);
         conn->user_data = 0;

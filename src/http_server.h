@@ -10,6 +10,16 @@ struct http_req {
     /// The underlying TCP connection.
     struct tcp_conn* conn;
 
+    int flags;
+    enum {
+        req_parse_state_method = 0,
+        req_parse_state_path = 1,
+        req_parse_state_version = 2,
+        req_parse_state_headers = 3,
+        req_parse_state_body = 4,
+        req_parse_state_done = 5,
+    } parse_state;
+
     /// Null-terminated string pointing to the method of the request, inside the buffer.
     char* method;
 
