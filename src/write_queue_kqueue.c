@@ -1,6 +1,5 @@
 #include <errno.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/event.h>
 
 #include "logging.h"
@@ -57,4 +56,12 @@ int write_loop_add_fd(struct write_queue* queue, int fd) {
         return -1;
     }
     return 0;
+}
+
+void write_loop_remove_fd(struct write_queue* queue, int fd) {
+    struct kevent ev;
+    EV_SET(&ev, fd, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
+    if (kevent(queue->loop_fd, &ev, 1, 0, 0, 0) < 0) {
+        LOG_ERROR("kevent() failed errno=%d (%s)", errno, errno_str(errno));
+    }
 }

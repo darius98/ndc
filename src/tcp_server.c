@@ -252,6 +252,7 @@ static void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* c
     tcp_conn_before_close_callback(server->cb_data, conn);
     tcp_conn_table_erase(&server->conn_table, conn);
     write_queue_remove_conn(&server->w_queue, conn);
+    remove_conn_from_read_loop(server, conn);
     LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
     tcp_conn_dec_refcount(conn);
 }

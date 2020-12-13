@@ -11,6 +11,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
     if (kqueue_fd < 0) {
         LOG_FATAL("Failed to start TCP server: kqueue() failed errno=%d (%s)", errno, errno_str(errno));
     }
+    server->loop_fd = kqueue_fd;
 
     struct kevent event;
     EV_SET(&event, server->listen_fd, EVFILT_READ, EV_ADD, 0, 0, 0);
@@ -42,6 +43,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
             continue;
         }
 
+        int should_process_notification = 0;
         for (int i = 0; i < n_ev; i++) {
             int event_fd = (int)events[i].ident;
             if (event_fd == server->listen_fd) {
@@ -56,7 +58,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                     }
                 }
             } else if (event_fd == server->notify_pipe[0]) {
-                tcp_server_process_notification(server);
+                should_process_notification = 1;
             } else {
                 if (events[i].flags & EV_EOF) {
                     close_tcp_conn_by_fd(server, event_fd);
@@ -76,5 +78,22 @@ void run_tcp_server_loop(struct tcp_server *server) {
                 }
             }
         }
+        if (should_process_notification) {
+            // Process notifications last, because in case we close and free a connection because of
+            // a notification, the pointer to the tcp_conn saved in the kevent() becomes a dangling
+            // pointer.
+            tcp_server_process_notification(server);
+        }
+    }
+}
+
+void remove_conn_from_read_loop(struct tcp_server *server, struct tcp_conn *conn) {
+    struct kevent event;
+    EV_SET(&event, conn->fd, EVFILT_READ, EV_DELETE, 0, 0, conn);
+    if (kevent(server->loop_fd, &event, 1, 0, 0, 0) < 0) {
+        LOG_ERROR("Could not remove TCP connection %s:%d (fd=%d) from read loop, kevent() failed errno=%d (%s)",
+                  ipv4_str(conn->ipv4), conn->port, conn->fd, errno, errno_str(errno));
+    } else {
+        LOG_DEBUG("Removed connection %s:%d (fd=%d) from read loop", ipv4_str(conn->ipv4), conn->port, conn->fd);
     }
 }

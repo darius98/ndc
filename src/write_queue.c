@@ -43,14 +43,14 @@ static void pop_task(struct write_task_list* task_list, int err) {
     free(task);
 }
 
-static void clear_task_list(struct write_task_list* task_list, int err) {
+static void clear_task_list(struct write_task_list* task_list) {
     struct write_task* task;
     task = task_list->head;
     task_list->head = 0;
     task_list->tail = 0;
     while (task != 0) {
         struct write_task* next = task->next;
-        task->cb(task->cb_data, task_list->conn, err);
+        task->cb(task->cb_data, task_list->conn, ECONNABORTED);
         free(task);
         task = next;
     }
@@ -94,9 +94,10 @@ static void remove_task_list(struct write_queue* queue, int fd) {
         }
     }
     if (task_list != 0) {
-        clear_task_list(task_list, ECONNABORTED);
+        clear_task_list(task_list);
         LOG_DEBUG("Reclaiming memory for write_task_list for connection %s:%d (fd=%d)", ipv4_str(task_list->conn->ipv4),
                   task_list->conn->port, task_list->conn->fd);
+        write_loop_remove_fd(queue, task_list->conn->fd);
         tcp_conn_dec_refcount(task_list->conn);
         free(task_list);
         atomic_fetch_sub_explicit(&queue->task_lists.size, 1, memory_order_release);

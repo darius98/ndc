@@ -66,4 +66,6 @@ void run_write_loop(struct write_queue* queue);
 
 int write_loop_add_fd(struct write_queue* queue, int fd);
 
+void write_loop_remove_fd(struct write_queue* queue, int fd);
+
 #endif

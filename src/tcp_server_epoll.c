@@ -12,6 +12,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
     if (epoll_fd < 0) {
         LOG_FATAL("Failed to start server: epoll_create1() failed errno=%d (%s)", errno, errno_str(errno));
     }
+    server->loop_fd = epoll_fd;
 
     struct epoll_event event;
     event.events = EPOLLIN;
@@ -46,16 +47,17 @@ void run_tcp_server_loop(struct tcp_server *server) {
             continue;
         }
 
+        int should_process_notification = 0;
         for (int i = 0; i < n_ev; i++) {
             if ((events[i].events & EPOLLIN) == 0) {
-                continue; // TODO: Do something with EPOLLRDHUP
+                continue;  // TODO: Do something with EPOLLRDHUP
             }
             int event_fd = events[i].data.fd;
             if (event_fd == server->listen_fd) {
                 LOG_DEBUG("Received epoll event on TCP server socket (fd=%d)", server->listen_fd);
                 conn = accept_tcp_conn(server);
                 if (conn != 0) {
-                    event.events = EPOLLIN; // TODO: | EPOLLET;
+                    event.events = EPOLLIN;  // TODO: | EPOLLET;
                     event.data.fd = conn->fd;
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn->fd, &event) < 0) {
                         LOG_ERROR(
@@ -65,7 +67,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                     }
                 }
             } else if (event_fd == server->notify_pipe[0]) {
-                tcp_server_process_notification(server);
+                should_process_notification = 1;
             } else {
                 conn = find_tcp_conn(server, event_fd);
                 if (conn == 0) {
@@ -84,5 +86,18 @@ void run_tcp_server_loop(struct tcp_server *server) {
                 }
             }
         }
+        if (should_process_notification) {
+            tcp_server_process_notification(server);
+        }
+    }
+}
+
+void remove_conn_from_read_loop(struct tcp_server *server, struct tcp_conn *conn) {
+    struct epoll_event event;
+    event.events = EPOLLIN;  // TODO: | EPOLLET;
+    event.data.fd = conn->fd;
+    if (epoll_ctl(server->loop_fd, EPOLL_CTL_DEL, conn->fd, &event) < 0) {
+        LOG_ERROR("Could not remove TCP connection %s:%d (fd=%d) from read loop, epoll_ctl() failed errno=%d (%s)",
+                  ipv4_str(conn->ipv4), conn->port, conn->fd, errno, errno_str(errno));
     }
 }

@@ -34,6 +34,7 @@ struct tcp_server {
     struct write_queue w_queue;
     const struct tcp_server_conf* conf;
     int listen_fd;
+    int loop_fd;
     int notify_pipe[2];
     int port;
     void* tls_ctx;
@@ -61,6 +62,8 @@ void close_tcp_conn_by_fd(struct tcp_server* server, int fd);
 void tcp_server_process_notification(struct tcp_server* server);
 
 void run_tcp_server_loop(struct tcp_server* server);
+
+void remove_conn_from_read_loop(struct tcp_server* server, struct tcp_conn* conn);
 
 // These callbacks are not implemented in the TCP server.
 
