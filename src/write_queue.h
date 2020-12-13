@@ -48,7 +48,7 @@ struct write_queue {
 void init_write_queue(struct write_queue* queue, const struct tcp_write_queue_conf* conf,
                       struct tcp_server* tcp_server);
 
-int write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn);
+void write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn);
 
 void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn);
 
