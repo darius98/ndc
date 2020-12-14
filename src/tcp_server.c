@@ -140,7 +140,6 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     }
     atomic_store_explicit(&conn->ref_count, 1, memory_order_release);
     conn->fd = fd;
-    conn->buf_len = 0;
     conn->buf_cap = server->conf->connection_buffer_size;
     conn->buf = malloc(conn->buf_cap + 1);
     if (conn->buf == 0) {
@@ -207,22 +206,21 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
 
     int num_bytes;
     if (conn->tls == 0) {
-        num_bytes = recv(conn->fd, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len, MSG_DONTWAIT);
+        num_bytes = recv(conn->fd, conn->buf, conn->buf_cap, MSG_DONTWAIT);
         if (num_bytes < 0) {
             LOG_ERROR("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
                       conn->fd, errno, errno_str(errno));
             return -1;
         }
     } else {
-        num_bytes = recv_tls(conn->tls, conn->buf + conn->buf_len, conn->buf_cap - conn->buf_len);
+        num_bytes = recv_tls(conn->tls, conn->buf, conn->buf_cap);
     }
     if (num_bytes <= 0) {
         return num_bytes;
     }
     LOG_DEBUG("Received %d bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
-    conn->buf_len += num_bytes;
-    conn->buf[conn->buf_len] = 0;
-    if (tcp_conn_on_recv_callback(server->cb_data, conn) < 0) {
+    conn->buf[num_bytes] = 0;
+    if (tcp_conn_on_recv_callback(server->cb_data, conn, num_bytes) < 0) {
         close_tcp_conn(server, conn);
     }
     return num_bytes;

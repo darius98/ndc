@@ -157,9 +157,9 @@ static char* find_next_clrf(char* s) {
     return strstr(s, "\r\n");
 }
 
-static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
+static int read_http_reqs(struct http_server* server, struct tcp_conn* conn, int num_bytes) {
     char* buf = conn->buf;
-    char* const buf_end = conn->buf + conn->buf_len;
+    char* const buf_end = conn->buf + num_bytes;
     while (1) {
         struct http_req* req = conn->user_data;
         if (req->parse_state <= req_parse_state_method) {
@@ -245,7 +245,7 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
                     return -1;
                 }
                 int recv_bytes_read = buf - conn->buf;
-                int recv_bytes_left = conn->buf_len - recv_bytes_read;
+                int recv_bytes_left = num_bytes - recv_bytes_read;
                 int body_bytes_recv = recv_bytes_left < body_len_left ? recv_bytes_left : body_len_left;
                 memcpy(req->buf + req->buf_len, buf, body_bytes_recv);
                 req->buf_len += body_bytes_recv;
@@ -277,10 +277,8 @@ int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn) {
     return 0;
 }
 
-int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn) {
-    int ret = read_http_reqs((struct http_server*)cb_data, conn);
-    conn->buf_len = 0;
-    return ret;
+int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn, int num_bytes) {
+    return read_http_reqs((struct http_server*)cb_data, conn, num_bytes);
 }
 
 void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {

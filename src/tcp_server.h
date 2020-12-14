@@ -7,7 +7,6 @@
 struct tcp_conn {
     _Atomic(int) ref_count;
     int fd;
-    int buf_len;
     int buf_cap;
     char* buf;
     void* tls;
@@ -69,7 +68,7 @@ void remove_conn_from_read_loop(struct tcp_server* server, struct tcp_conn* conn
 
 int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn);
 
-int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn);
+int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn, int num_bytes);
 
 void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn);
 
