@@ -224,10 +224,6 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     conn->buf[conn->buf_len] = 0;
     if (tcp_conn_on_recv_callback(server->cb_data, conn) < 0) {
         close_tcp_conn(server, conn);
-    } else if (conn->buf_len == conn->buf_cap) {
-        LOG_ERROR("Buffer full for connection %s:%d (fd=%d), will close connection", ipv4_str(conn->ipv4), conn->port,
-                  conn->fd);
-        close_tcp_conn(server, conn);
     }
     return num_bytes;
 }

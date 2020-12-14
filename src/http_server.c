@@ -136,18 +136,17 @@ static void try_parse_content_length_header(struct http_req* req, char* start, c
     }
 }
 
-static char* append_to_http_req(struct http_req* req, const char* start, const char* end) {
+static int append_to_http_req(struct http_req* req, const char* start, const char* end) {
     int len = end - start;
-    if (len + 1 > req->buf_cap - req->buf_len) {
+    if (len > req->buf_cap - req->buf_len) {
         LOG_ERROR("Received HTTP request larger than %d bytes from %s:%d, will close connection", req->buf_cap,
                   ipv4_str(req->conn->ipv4), req->conn->port);
-        return 0;
+        return -1;
     }
     char* dst = req->buf + req->buf_len;
     memcpy(dst, start, len);
     req->buf_len += len;
-    req->buf[req->buf_len++] = 0;
-    return dst;
+    return 0;
 }
 
 static char* find_next_space(char* s) {
@@ -160,15 +159,19 @@ static char* find_next_clrf(char* s) {
 
 static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
     char* buf = conn->buf;
-    char* initial_buf = buf;
+    char* const buf_end = conn->buf + conn->buf_len;
     while (1) {
         struct http_req* req = conn->user_data;
         if (req->parse_state <= req_parse_state_method) {
             char* end = find_next_space(buf);
             if (end == 0) {
-                return buf - initial_buf;
+                if (append_to_http_req(req, buf, buf_end) < 0) {
+                    return -1;
+                }
+                return 0;
             }
-            if (append_to_http_req(req, buf, end) == 0) {
+            *end = 0;
+            if (append_to_http_req(req, buf, end + 1) < 0) {
                 return -1;
             }
             buf = end + 1;
@@ -178,9 +181,13 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
         if (req->parse_state <= req_parse_state_path) {
             char* end = find_next_space(buf);
             if (end == 0) {
-                return buf - initial_buf;
+                if (append_to_http_req(req, buf, buf_end) < 0) {
+                    return -1;
+                }
+                return 0;
             }
-            if (append_to_http_req(req, buf, end) == 0) {
+            *end = 0;
+            if (append_to_http_req(req, buf, end + 1) < 0) {
                 return -1;
             }
             buf = end + 1;
@@ -190,9 +197,14 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
         if (req->parse_state <= req_parse_state_version) {
             char* end = find_next_clrf(buf);
             if (end == 0) {
-                return buf - initial_buf;
+                if (append_to_http_req(req, buf, buf_end) < 0) {
+                    return -1;
+                }
+                return 0;
             }
-            if (append_to_http_req(req, buf, end) == 0) {
+            *end = 0;
+            *(end + 1) = 0;
+            if (append_to_http_req(req, buf, end + 2) < 0) {
                 return -1;
             }
             buf = end + 2;
@@ -202,14 +214,19 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
         while (1) {
             char* end = find_next_clrf(buf);
             if (end == 0) {
-                return buf - initial_buf;
+                if (append_to_http_req(req, buf, buf_end) < 0) {
+                    return -1;
+                }
+                return 0;
             }
+            *end = 0;
+            *(end + 1) = 0;
             if (end == buf) {
                 // headers are done.
                 buf = end + 2;
                 break;
             }
-            if (append_to_http_req(req, buf, end) == 0) {
+            if (append_to_http_req(req, buf, end + 2) < 0) {
                 return -1;
             }
             try_parse_content_length_header(req, buf, end);
@@ -227,14 +244,14 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn) {
                     // We can't fit this request into the buffer.
                     return -1;
                 }
-                int recv_bytes_read = buf - initial_buf;
+                int recv_bytes_read = buf - conn->buf;
                 int recv_bytes_left = conn->buf_len - recv_bytes_read;
                 int body_bytes_recv = recv_bytes_left < body_len_left ? recv_bytes_left : body_len_left;
                 memcpy(req->buf + req->buf_len, buf, body_bytes_recv);
                 req->buf_len += body_bytes_recv;
                 buf += body_bytes_recv;
                 if (body_bytes_recv < body_len_left) {
-                    return buf - initial_buf;
+                    return 0;
                 }
             }
         }
@@ -261,15 +278,9 @@ int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn) {
 }
 
 int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn) {
-    int bytes_read = read_http_reqs((struct http_server*)cb_data, conn);
-    if (bytes_read <= 0) {
-        return bytes_read;
-    }
-    if (bytes_read != conn->buf_len) {
-        memmove(conn->buf, conn->buf + bytes_read, conn->buf_len - bytes_read);
-    }
-    conn->buf_len -= bytes_read;
-    return bytes_read;
+    int ret = read_http_reqs((struct http_server*)cb_data, conn);
+    conn->buf_len = 0;
+    return ret;
 }
 
 void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
