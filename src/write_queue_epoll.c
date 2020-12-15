@@ -56,7 +56,7 @@ void run_write_loop(struct write_queue* queue) {
 
 int write_loop_add_fd(struct write_queue* queue, int fd) {
     struct epoll_event event;
-    event.events = EPOLLIN; // TODO: | EPOLLET;
+    event.events = EPOLLIN;  // TODO: | EPOLLET;
     event.data.fd = fd;
     if (epoll_ctl(queue->loop_fd, EPOLL_CTL_ADD, fd, &event) < 0) {
         LOG_ERROR("epoll_ctl() failed errno=%d (%s)", errno, errno_str(errno));
@@ -67,7 +67,7 @@ int write_loop_add_fd(struct write_queue* queue, int fd) {
 
 void write_loop_remove_fd(struct write_queue* queue, int fd) {
     struct epoll_event event;
-    event.events = EPOLLIN; // TODO: | EPOLLET;
+    event.events = EPOLLIN;  // TODO: | EPOLLET;
     event.data.fd = fd;
     if (epoll_ctl(queue->loop_fd, EPOLL_CTL_DEL, fd, &event) < 0) {
         LOG_ERROR("epoll_ctl() failed errno=%d (%s)", errno, errno_str(errno));

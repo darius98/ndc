@@ -11,7 +11,8 @@ struct http_req {
     struct tcp_conn* conn;
 
     int flags;
-    enum {
+    enum
+    {
         req_parse_state_method = 0,
         req_parse_state_path = 1,
         req_parse_state_version = 2,

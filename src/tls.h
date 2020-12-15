@@ -1,7 +1,7 @@
 #ifndef NDC_TLS_H_
 #define NDC_TLS_H_
 
-void* init_tls(char *cert_pem_file);
+void* init_tls(char* cert_pem_file);
 
 void* new_tls_for_conn(void* tls_ctx, int fd);
 

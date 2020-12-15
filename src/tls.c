@@ -6,7 +6,7 @@
 
 #include "logging.h"
 
-static int print_errors(const char *str, __attribute__((unused)) size_t len, __attribute__((unused)) void *u) {
+static int print_errors(const char* str, __attribute__((unused)) size_t len, __attribute__((unused)) void* u) {
     // The OpenSSL error always contains an extra newline
     *((char*)str + strlen(str) - 1) = '\0';
     LOG_ERROR("OpenSSL: %s", str);
@@ -14,7 +14,7 @@ static int print_errors(const char *str, __attribute__((unused)) size_t len, __a
     return 0;
 }
 
-void* init_tls(char *cert_pem_file) {
+void* init_tls(char* cert_pem_file) {
     if (strncasecmp(cert_pem_file, "none", 4) == 0) {
         return 0;
     }
@@ -23,8 +23,8 @@ void* init_tls(char *cert_pem_file) {
 
     OpenSSL_add_all_algorithms();
     SSL_load_error_strings();
-    const SSL_METHOD *method = TLS_server_method();
-    SSL_CTX *ctx = SSL_CTX_new(method);
+    const SSL_METHOD* method = TLS_server_method();
+    SSL_CTX* ctx = SSL_CTX_new(method);
     if (ctx == 0) {
         ERR_print_errors_cb(print_errors, 0);
         LOG_FATAL("Failed to initialize OpenSSL certificates.");
@@ -68,7 +68,8 @@ int recv_tls(void* tls, char* buf, int buf_len) {
     int r = SSL_read(tls, buf, buf_len);
     if (r <= 0) {
         int err = SSL_get_error(tls, r);
-        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE || err == SSL_ERROR_NONE || err == SSL_ERROR_ZERO_RETURN) {
+        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE || err == SSL_ERROR_NONE ||
+            err == SSL_ERROR_ZERO_RETURN) {
             return 0;
         }
         ERR_print_errors_cb(print_errors, 0);
