@@ -130,14 +130,8 @@ void init_write_queue(struct write_queue* queue, const struct tcp_write_queue_co
     queue->tcp_server = tcp_server;
     queue->loop_max_events = conf->events_batch_size;
     init_tasks_list_table(&queue->task_lists, conf->num_buckets, conf->bucket_initial_capacity);
-    if (pipe(queue->loop_notify_pipe) < 0) {
-        LOG_FATAL("pipe() failed errno=%d (%s)", errno, errno_str(errno));
-    }
-    if (set_nonblocking(queue->loop_notify_pipe[0]) < 0) {
-        LOG_FATAL("Failed to set read pipe non-blocking for TCP write queue");
-    }
-    if (set_nonblocking(queue->loop_notify_pipe[1]) < 0) {
-        LOG_FATAL("Failed to set write pipe non-blocking for TCP write queue");
+    if (make_nonblocking_pipe(queue->loop_notify_pipe) < 0) {
+        LOG_FATAL("Failed to create notify pipe for TCP write queue");
     }
     init_write_loop(queue);
     ff_pthread_create(&queue->worker, 0, write_queue_worker, queue);

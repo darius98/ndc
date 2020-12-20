@@ -78,32 +78,13 @@ void init_tcp_server(struct tcp_server* server, int port, const struct tcp_serve
     server->conf = conf;
     server->port = port;
 
-    if (pipe(server->notify_pipe) < 0) {
-        LOG_FATAL("pipe() failed errno=%d (%s)", errno, errno_str(errno));
-    }
-    if (set_nonblocking(server->notify_pipe[0]) < 0) {
-        LOG_FATAL("Failed to set read pipe non-blocking for TCP write queue");
-    }
-    if (set_nonblocking(server->notify_pipe[1]) < 0) {
-        LOG_FATAL("Failed to set write pipe non-blocking for TCP write queue");
+    if (make_nonblocking_pipe(server->notify_pipe) < 0) {
+        LOG_FATAL("Failed to create notify pipe for TCP server");
     }
 
-    server->listen_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    server->listen_fd = listen_tcp(port, conf->backlog);
     if (server->listen_fd < 0) {
         LOG_FATAL("socket() failed errno=%d (%s)", errno, errno_str(errno));
-    }
-
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(struct sockaddr_in));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_addr.sin_port = htons(port);
-    if (bind(server->listen_fd, (const struct sockaddr*)&server_addr, sizeof(struct sockaddr_in)) < 0) {
-        LOG_FATAL("bind() failed errno=%d (%s)", errno, errno_str(errno));
-    }
-
-    if (listen(server->listen_fd, conf->backlog) < 0) {
-        LOG_FATAL("listen() failed errno=%d (%s)", errno, errno_str(errno));
     }
 }
 
