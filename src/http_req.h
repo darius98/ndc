@@ -7,7 +7,6 @@ struct http_req {
     /// The underlying TCP connection.
     struct tcp_conn* conn;
 
-    int flags;
     enum
     {
         req_parse_state_method = 0,
@@ -18,22 +17,10 @@ struct http_req {
         req_parse_state_done = 5,
     } parse_state;
 
-    /// Null-terminated string pointing to the method of the request, inside the buffer.
-    char* method;
-
-    /// Null-terminated string pointing to the path of the request, inside the buffer.
-    char* path;
-
-    /// Null-terminated string pointing to the HTTP version of the request, inside the buffer.
-    char* version;
-
-    /// Null-terminated string pointing to the first HTTP header of the request, inside the buffer.
-    char* headers;
-
-    /// Pointer to the body of the request. Not necessarily null-terminated.
-    char* body;
-
-    /// Parsed value of the Content-Length header (-1 if the header is not available or invalid).
+    int path_offset;
+    int version_offset;
+    int headers_offset;
+    int body_offset;
     int body_len;
 
     /// Used length of the request buffer.
@@ -50,5 +37,15 @@ struct http_req {
     /// For the queue of http requests.
     struct http_req* next;
 };
+
+char* req_method(struct http_req* req);
+
+char* req_path(struct http_req* req);
+
+char* req_version(struct http_req* req);
+
+char* req_headers(struct http_req* req);
+
+char* req_body(struct http_req* req);
 
 #endif

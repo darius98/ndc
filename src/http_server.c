@@ -9,7 +9,7 @@
 #include "tcp_server.h"
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
-    LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req->method, req->path, ipv4_str(req->conn->ipv4),
+    LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req_method(req), req_path(req), ipv4_str(req->conn->ipv4),
               req->conn->port);
     ff_pthread_mutex_lock(&server->lock);
     req->next = 0;
@@ -48,7 +48,7 @@ static void* http_worker(void* arg) {
     struct http_server* server = (struct http_server*)arg;
     while (atomic_load_explicit(&server->stopped, memory_order_acquire) == 0) {
         struct http_req* req = http_server_pop_req(server);
-        LOG_DEBUG("Processing HTTP request %s %s from %s:%d", req->method, req->path, ipv4_str(req->conn->ipv4),
+        LOG_DEBUG("Processing HTTP request %s %s from %s:%d", req_method(req), req_path(req), ipv4_str(req->conn->ipv4),
                   req->conn->port);
         on_http_req_callback(server->cb_data, req);
     }
@@ -97,16 +97,14 @@ static struct http_req* new_http_req(struct http_server* server, struct tcp_conn
         return 0;
     }
 
-    req->conn = conn;
     tcp_conn_inc_refcount(conn);
 
-    req->flags = 0;
+    req->conn = conn;
     req->parse_state = req_parse_state_method;
-    req->method = req->buf;
-    req->path = 0;
-    req->version = 0;
+    req->path_offset = -1;
+    req->version_offset = -1;
     req->body_len = -1;
-    req->body = 0;
+    req->body_offset = -1;
     req->next = 0;
     return req;
 }
@@ -176,7 +174,7 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn, int
             }
             buf = end + 1;
             req->parse_state = req_parse_state_path;
-            req->path = req->buf + req->buf_len;
+            req->path_offset = req->buf_len;
         }
         if (req->parse_state <= req_parse_state_path) {
             char* end = find_next_space(buf);
@@ -192,7 +190,7 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn, int
             }
             buf = end + 1;
             req->parse_state = req_parse_state_version;
-            req->version = req->buf + req->buf_len;
+            req->version_offset = req->buf_len;
         }
         if (req->parse_state <= req_parse_state_version) {
             char* end = find_next_clrf(buf);
@@ -209,7 +207,7 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn, int
             }
             buf = end + 2;
             req->parse_state = req_parse_state_headers;
-            req->headers = req->buf + req->buf_len;
+            req->headers_offset = req->buf_len;
         }
         while (1) {
             char* end = find_next_clrf(buf);
@@ -231,12 +229,11 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn, int
             }
             try_parse_content_length_header(req, buf, end);
             buf = end + 2;
-            req->body = req->buf + req->buf_len;
+            req->body_offset = req->buf_len;
         }
         req->parse_state = req_parse_state_body;
         if (req->body_len > 0) {
-            int body_offset = req->body - req->buf;
-            int body_len_read = req->buf_len - body_offset;
+            int body_len_read = req->buf_len - req->body_offset;
             int body_len_left = req->body_len - body_len_read;
             if (body_len_left >= 0) {
                 // We still have to receive (at least part of) the request body.

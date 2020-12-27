@@ -177,7 +177,7 @@ void log_access(struct http_req* req, int status) {
         lock_logs();
         fprintf(logging.access_file, "%s - - [", ipv4_str(req->conn->ipv4));
         log_time(logging.access_file);
-        fprintf(logging.access_file, "] \"%s %s %s\" %d\n", req->method, req->path, req->version, status);
+        fprintf(logging.access_file, "] \"%s %s %s\" %d\n", req_method(req), req_path(req), req_version(req), status);
         unlock_logs();
     }
 }
