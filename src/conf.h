@@ -45,6 +45,8 @@ struct conf {
     struct http_conf http;
 };
 
+struct conf default_conf();
+
 struct conf load_conf();
 
 #endif

@@ -184,26 +184,42 @@ static void parse_file_path(const char* file, int lineno, int colno, const char*
     *((const char**)dst) = path;
 }
 
+struct conf default_conf() {
+    struct conf conf = {
+        .file_path = get_config_file_path(),
+        .logging = {
+            .access_log = "stdout",
+            .server_log = "stderr",
+            .min_level = 0,
+            .filename_and_lineno = 1,
+        },
+        .file_cache = {
+            .num_buckets = 23,
+            .bucket_initial_capacity = 4,
+        },
+        .tcp_server = {
+            .backlog = 2048,
+            .num_buckets = 23,
+            .bucket_initial_capacity = 4,
+            .events_batch_size = 2048,
+            .connection_buffer_size = 65536,
+            .tls_cert_pem = "none",
+        },
+        .tcp_write_queue = {
+            .num_buckets = 23,
+            .bucket_initial_capacity = 4,
+            .events_batch_size = 2048,
+        },
+        .http = {
+            .num_workers = 1,
+            .request_buffer_size = 65536,
+        },
+    };
+    return conf;
+}
+
 struct conf load_conf() {
-    struct conf conf;
-    conf.file_path = get_config_file_path();
-    conf.logging.access_log = "stdout";
-    conf.logging.server_log = "stderr";
-    conf.logging.min_level = 0;
-    conf.logging.filename_and_lineno = 1;
-    conf.file_cache.num_buckets = 23;
-    conf.file_cache.bucket_initial_capacity = 4;
-    conf.tcp_server.backlog = 2048;
-    conf.tcp_server.num_buckets = 23;
-    conf.tcp_server.bucket_initial_capacity = 4;
-    conf.tcp_server.events_batch_size = 2048;
-    conf.tcp_server.connection_buffer_size = 65536;
-    conf.tcp_server.tls_cert_pem = "none";
-    conf.tcp_write_queue.num_buckets = 23;
-    conf.tcp_write_queue.bucket_initial_capacity = 4;
-    conf.tcp_write_queue.events_batch_size = 2048;
-    conf.http.num_workers = 1;
-    conf.http.request_buffer_size = 65536;
+    struct conf conf = default_conf();
 #define NUM_CONF_ENTRIES 17
     struct conf_entry entries[NUM_CONF_ENTRIES] = {
         {"logging.access_log", &conf.logging.access_log, parse_file_path, 0},

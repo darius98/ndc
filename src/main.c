@@ -13,7 +13,7 @@ int main() {
     init_logging(&conf.logging);
 
     if (!conf.is_from_file) {
-        LOG_WARN(
+        LOG_INFO(
             "No conf file found at %s, using default settings. Use environment variable %s to point to a different "
             "conf file location instead.",
             conf.file_path, NDC_CONF_FILE_ENV_VAR);
