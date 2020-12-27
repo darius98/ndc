@@ -16,6 +16,7 @@ set(ndc_sources
         src/fd.c
         src/ff_pthread.c
         src/file_cache.c
+        src/http_req.c
         src/http_server.c
         src/logging.c
         src/main.c
