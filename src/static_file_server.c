@@ -34,8 +34,9 @@ static struct known_extension known_extensions[NUM_KNOWN_EXTENSIONS] = {
 };
 
 void init_static_file_server(struct static_file_server* server, struct file_cache* cache, struct tcp_server* tcp_server,
-                             const char* base_dir) {
+                             struct http_server* http_server, const char* base_dir) {
     server->tcp_server = tcp_server;
+    server->http_server = http_server;
     server->cache = cache;
     server->base_dir_len = strlen(base_dir);
     server->base_dir = malloc(server->base_dir_len + 1);
@@ -45,18 +46,7 @@ void init_static_file_server(struct static_file_server* server, struct file_cach
     strcpy(server->base_dir, base_dir);
 }
 
-static void http_404_write_cb(void* data, struct tcp_conn* conn, int err) {
-    struct http_req* req = (struct http_req*)data;
-    if (err != 0) {
-        LOG_ERROR("Failed to write 404 Not found response to request %s %s from connection %s:%d errno=%d (%s)",
-                  req_method(req), req_path(req), ipv4_str(conn->ipv4), conn->port, err, errno_str(err));
-    } else {
-        log_access(req, 404);
-    }
-    delete_http_req(req);
-}
-
-struct http_200_cb_data {
+struct http_write_cb_data {
     struct http_req* req;
     struct static_file_server* server;
     struct mapped_file* file;
@@ -65,24 +55,39 @@ struct http_200_cb_data {
     char res_hdrs[200];
 };
 
+static void http_404_write_cb(void* data, struct tcp_conn* conn, int err) {
+    struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
+    if (err != 0) {
+        LOG_ERROR("Failed to write 404 Not found response to request %s %s from connection %s:%d errno=%d (%s)",
+                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(conn->ipv4), conn->port, err,
+                  errno_str(err));
+    } else {
+        log_access(cb_data->req, 404);
+    }
+    delete_http_req(cb_data->server->http_server, cb_data->req);
+    free(cb_data);
+}
+
 static void http_200_response_headers_cb(void* data, struct tcp_conn* conn, int err) {
-    struct http_200_cb_data* cb_data = (struct http_200_cb_data*)data;
+    struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
     if (err != 0) {
         LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
-                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(conn->ipv4), conn->port, err, errno_str(err));
+                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(conn->ipv4), conn->port, err,
+                  errno_str(err));
     }
 }
 
 static void http_200_response_body_cb(void* data, struct tcp_conn* conn, int err) {
-    struct http_200_cb_data* cb_data = (struct http_200_cb_data*)data;
+    struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
     if (err != 0) {
         LOG_ERROR("Failed to write file response to request %s %s from connection %s:%d errno=%d (%s)",
-                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(conn->ipv4), conn->port, errno, errno_str(errno));
+                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(conn->ipv4), conn->port, errno,
+                  errno_str(errno));
     } else {
         log_access(cb_data->req, 200);
     }
     close_file(cb_data->server->cache, cb_data->file);
-    delete_http_req(cb_data->req);
+    delete_http_req(cb_data->server->http_server, cb_data->req);
     free(cb_data);
 }
 
@@ -92,9 +97,22 @@ static void serve_static_file(struct static_file_server* server, struct http_req
         LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
                   req->conn->port, req_method(req), req_path(req));
         close_tcp_conn(server->tcp_server, req->conn);
-        delete_http_req(req);
+        delete_http_req(server->http_server, req);
         return;
     }
+
+    struct http_write_cb_data* cb_data = malloc(sizeof(struct http_write_cb_data));
+    if (cb_data == 0) {
+        LOG_ERROR("Failed to allocate callback data for writing response to request %s %s from connection %s:%d",
+                  req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port);
+        close_tcp_conn(server->tcp_server, req->conn);
+        delete_http_req(server->http_server, req);
+        return;
+    }
+
+    cb_data->req = req;
+    cb_data->server = server;
+    cb_data->file = 0;
 
     strcpy(path, server->base_dir);
     strcat(path, req_path(req) + (path[server->base_dir_len - 1] == '/' && req_path(req)[0] == '/' ? 1 : 0));
@@ -105,6 +123,7 @@ static void serve_static_file(struct static_file_server* server, struct http_req
                          http_404_write_cb);
         return;
     }
+    cb_data->file = file;
 
     const char* content_type_hdr_value = "application/octet-stream";
     for (int i = 0; i < NUM_KNOWN_EXTENSIONS; i++) {
@@ -115,17 +134,6 @@ static void serve_static_file(struct static_file_server* server, struct http_req
         }
     }
 
-    struct http_200_cb_data* cb_data = malloc(sizeof(struct http_200_cb_data));
-    if (cb_data == 0) {
-        LOG_ERROR("Failed to allocate callback data for writing response to request %s %s from connection %s:%d",
-                  req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port);
-        close_file(server->cache, file);
-        delete_http_req(req);
-        return;
-    }
-    cb_data->req = req;
-    cb_data->server = server;
-    cb_data->file = file;
     cb_data->res_hdrs_len = snprintf(cb_data->res_hdrs, 200,
                                      "HTTP/1.1 200 OK\r\n"
                                      "Server: NDC/1.0.0\r\n"
@@ -139,7 +147,7 @@ static void serve_static_file(struct static_file_server* server, struct http_req
         free(cb_data);
         close_file(server->cache, file);
         close_tcp_conn(server->tcp_server, req->conn);
-        delete_http_req(req);
+        delete_http_req(server->http_server, req);
         return;
     }
     write_queue_push(&server->tcp_server->w_queue, req->conn, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data,

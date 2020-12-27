@@ -24,7 +24,7 @@ struct http_server {
 /// Initialize a http server. Note: Aborts on failure.
 void init_http_server(struct http_server* server, const struct http_conf* conf);
 
-void delete_http_req(struct http_req* req);
+void delete_http_req(struct http_server* server, struct http_req* req);
 
 // These callbacks are not implemented in the HTTP server.
 

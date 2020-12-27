@@ -72,7 +72,7 @@ void init_http_server(struct http_server* server, const struct http_conf* conf) 
     }
 }
 
-void delete_http_req(struct http_req* req) {
+void delete_http_req(struct http_server* server, struct http_req* req) {
     tcp_conn_dec_refcount(req->conn);
     free(req->buf);
     free(req);
@@ -280,7 +280,7 @@ int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn, int num_byte
 
 void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
     if (conn->user_data != 0) {
-        delete_http_req((struct http_req*)conn->user_data);
+        delete_http_req((struct http_server*)cb_data, (struct http_req*)conn->user_data);
         conn->user_data = 0;
     }
 }

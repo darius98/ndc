@@ -17,7 +17,7 @@ void run_ndc_application_sync(const struct conf* conf) {
     tcp_server.cb_data = &http_server;
 
     struct static_file_server static_file_server;
-    init_static_file_server(&static_file_server, &file_cache, &tcp_server, "./");
+    init_static_file_server(&static_file_server, &file_cache, &tcp_server, &http_server, "./");
     http_server.cb_data = &static_file_server;
 
     run_tcp_server_loop(&tcp_server);
