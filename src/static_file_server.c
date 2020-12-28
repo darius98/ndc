@@ -118,7 +118,7 @@ static void serve_static_file(struct static_file_server* server, struct http_req
 
     struct mapped_file* file = open_file(server->cache, path);
     if (file == 0) {
-        write_queue_push(&server->tcp_server->w_queue, req->conn, http_404_response, http_404_response_len, req,
+        write_queue_push(&server->tcp_server->w_queue, req->conn, http_404_response, http_404_response_len, cb_data,
                          http_404_write_cb);
         return;
     }

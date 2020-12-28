@@ -1,8 +1,6 @@
 #include <errno.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/epoll.h>
-#include <unistd.h>
 
 #include "logging.h"
 #include "tcp_server.h"
@@ -26,17 +24,18 @@ void run_tcp_server_loop(struct tcp_server *server) {
         LOG_FATAL("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, errno_str(errno));
     }
 
-    struct epoll_event *events = malloc(sizeof(struct epoll_event) * server->conf->events_batch_size);
+    int num_events = server->conf->events_batch_size;
+    struct epoll_event *events = malloc(sizeof(struct epoll_event) * num_events);
     if (events == 0) {
         LOG_FATAL("Failed to start TCP server: failed to allocate %d epoll_events (malloc failed %zu bytes)",
-                  server->conf->events_batch_size, sizeof(struct epoll_event) * server->conf->events_batch_size);
+                  num_events, sizeof(struct epoll_event) * num_events);
     }
 
     LOG_INFO("Running HTTP server on port %d", server->port);
 
     struct tcp_conn *conn;
     while (1) {
-        int n_ev = epoll_wait(epoll_fd, &event, 1, -1);
+        int n_ev = epoll_wait(epoll_fd, events, num_events, -1);
         if (n_ev < 0) {
             // TODO: Handle error better.
             LOG_FATAL("Server: epoll_wait() failed errno=%d (%s)", errno, errno_str(errno));

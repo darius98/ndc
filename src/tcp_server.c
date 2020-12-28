@@ -84,7 +84,7 @@ void init_tcp_server(struct tcp_server* server, int port, const struct tcp_serve
 
     server->listen_fd = listen_tcp(port, conf->backlog);
     if (server->listen_fd < 0) {
-        LOG_FATAL("socket() failed errno=%d (%s)", errno, errno_str(errno));
+        LOG_FATAL("Failed to start TCP server");
     }
 }
 
