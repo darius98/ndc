@@ -235,7 +235,6 @@ void write_queue_process_writes(struct write_queue* queue, int fd) {
         if (task_list->conn->tls == 0) {
             chunk_sz = write(fd, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
             if (chunk_sz < 0 && errno != EWOULDBLOCK) {
-                LOG_ERROR("write() failed with errno=%d (%s)", errno, errno_str(errno));
                 pop_task(task_list, errno);
                 close_tcp_conn(queue->tcp_server, task_list->conn);
                 break;

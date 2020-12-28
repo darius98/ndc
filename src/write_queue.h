@@ -52,6 +52,7 @@ void write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn);
 
 void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn);
 
+/// Note: It is the responsibility of the callback to log an appropriate message for errors.
 void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const char* buf, int buf_len, void* cb_data,
                       write_task_cb cb);
 

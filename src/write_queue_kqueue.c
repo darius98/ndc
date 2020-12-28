@@ -37,13 +37,17 @@ void run_write_loop(struct write_queue* queue) {
             continue;
         }
 
+        int should_process_notification = 0;
         for (int i = 0; i < n_ev; i++) {
             int event_fd = (int)events[i].ident;
             if (event_fd == queue->loop_notify_pipe[0]) {
-                write_queue_process_notification(queue);
+                should_process_notification = 1;
             } else {
                 write_queue_process_writes(queue, event_fd);
             }
+        }
+        if (should_process_notification) {
+            write_queue_process_notification(queue);
         }
     }
 }

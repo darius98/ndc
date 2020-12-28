@@ -1,6 +1,5 @@
 #include "static_file_server.h"
 
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -81,8 +80,8 @@ static void http_200_response_body_cb(void* data, struct tcp_conn* conn, int err
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
     if (err != 0) {
         LOG_ERROR("Failed to write file response to request %s %s from connection %s:%d errno=%d (%s)",
-                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(conn->ipv4), conn->port, errno,
-                  errno_str(errno));
+                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(conn->ipv4), conn->port, err,
+                  errno_str(err));
     } else {
         log_access(cb_data->req, 200);
     }
