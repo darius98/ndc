@@ -47,11 +47,13 @@ struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 
 struct tcp_conn* accept_tcp_conn(struct tcp_server* server);
 
-int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
+void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
 
 void tcp_conn_inc_refcount(struct tcp_conn* conn);
 
 void tcp_conn_dec_refcount(struct tcp_conn* conn);
+
+void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* conn);
 
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
 

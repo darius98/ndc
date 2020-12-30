@@ -64,18 +64,21 @@ void free_tls(void* tls) {
     }
 }
 
-int recv_tls(void* tls, char* buf, int buf_len) {
-    int r = SSL_read(tls, buf, buf_len);
-    if (r <= 0) {
-        int err = SSL_get_error(tls, r);
-        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE || err == SSL_ERROR_NONE ||
-            err == SSL_ERROR_ZERO_RETURN) {
-            return 0;
+enum recv_tls_result recv_tls(void* tls, char* buf, int buf_len, int* num_bytes_read) {
+    *num_bytes_read = SSL_read(tls, buf, buf_len);
+    if (*num_bytes_read <= 0) {
+        int err = SSL_get_error(tls, *num_bytes_read);
+        *num_bytes_read = 0;
+        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE || err == SSL_ERROR_NONE) {
+            return recv_tls_retry;
+        }
+        if (err == SSL_ERROR_ZERO_RETURN) {
+            return recv_tls_eof;
         }
         ERR_print_errors_cb(print_errors, 0);
-        return -1;
+        return recv_tls_error;
     }
-    return r;
+    return recv_tls_ok;
 }
 
 int write_tls(void* tls, const char* buf, int buf_len) {

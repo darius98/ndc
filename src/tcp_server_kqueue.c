@@ -54,7 +54,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
                         LOG_ERROR("Could not accept TCP connection from %s:%d (fd=%d), kevent() failed errno=%d (%s)",
                                   ipv4_str(conn->ipv4), conn->port, conn->fd, errno, errno_str(errno));
-                        close_tcp_conn(server, conn);
+                        close_tcp_conn_in_loop(server, conn);
                     }
                 }
             } else if (event_fd == server->notify_pipe[0]) {
@@ -66,12 +66,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                     struct tcp_conn *conn = (struct tcp_conn *)events[i].udata;
                     LOG_DEBUG("Received read kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
                               conn->fd);
-                    int n_bytes = recv_from_tcp_conn(server, conn);
-                    if (n_bytes < 0) {
-                        LOG_ERROR("Closing TCP connection to %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
-                                  conn->fd);
-                        close_tcp_conn(server, conn);
-                    }
+                    recv_from_tcp_conn(server, conn);
                 } else {
                     LOG_ERROR("Received unexpected event from kevent() fd=%d, event.flags=%d, event.filter=%u",
                               event_fd, events[i].flags, events[i].filter);

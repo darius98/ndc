@@ -160,11 +160,11 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     return conn;
 }
 
-int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
+void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     if (atomic_load_explicit(&conn->is_closed, memory_order_acquire) != 0) {
         LOG_DEBUG("Connection %s:%d (fd=%d) is already closed, ignoring recv request", ipv4_str(conn->ipv4), conn->port,
                   conn->fd);
-        return 0;
+        return;
     }
 
     int num_bytes;
@@ -173,20 +173,22 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
         if (num_bytes < 0) {
             LOG_ERROR("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
                       conn->fd, errno, errno_str(errno));
-            return -1;
         }
     } else {
-        num_bytes = recv_tls(conn->tls, conn->buf, tcp_conn_buf_cap(server));
+        enum recv_tls_result result = recv_tls(conn->tls, conn->buf, tcp_conn_buf_cap(server), &num_bytes);
+        if (result == recv_tls_retry) {
+            return;
+        }
     }
     if (num_bytes <= 0) {
-        return num_bytes;
+        close_tcp_conn_in_loop(server, conn);
+        return;
     }
     LOG_DEBUG("Received %d bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf[num_bytes] = 0;
     if (tcp_conn_on_recv_callback(server->cb_data, conn, num_bytes) < 0) {
-        close_tcp_conn(server, conn);
+        close_tcp_conn_in_loop(server, conn);
     }
-    return num_bytes;
 }
 
 struct tcp_server_notification {
@@ -195,7 +197,7 @@ struct tcp_server_notification {
     void* data;
 };
 
-static void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* conn) {
+void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* conn) {
     tcp_conn_before_close_callback(server->cb_data, conn);
     tcp_conn_table_erase(&server->conn_table, conn);
     write_queue_remove_conn(&server->w_queue, conn);

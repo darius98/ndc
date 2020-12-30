@@ -62,7 +62,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                         LOG_ERROR(
                             "Could not accept TCP connection from %s:%d (fd=%d), epoll_ctl() failed errno=%d (%s)",
                             ipv4_str(conn->ipv4), conn->port, conn->fd, errno, errno_str(errno));
-                        close_tcp_conn(server, conn);
+                        close_tcp_conn_in_loop(server, conn);
                     }
                 }
             } else if (event_fd == server->notify_pipe[0]) {
@@ -74,14 +74,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                 } else {
                     LOG_DEBUG("Received epoll event on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
                               conn->fd);
-                    int n_bytes = recv_from_tcp_conn(server, conn);
-                    if (n_bytes <= 0) {
-                        if (n_bytes < 0) {
-                            LOG_ERROR("Closing TCP connection to %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
-                                      conn->fd);
-                        }
-                        close_tcp_conn(server, conn);
-                    }
+                    recv_from_tcp_conn(server, conn);
                 }
             }
         }
