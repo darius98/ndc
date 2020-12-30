@@ -57,8 +57,6 @@ void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* conn);
 
 void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
 
-void close_tcp_conn_by_fd(struct tcp_server* server, int fd);
-
 void tcp_server_process_notification(struct tcp_server* server);
 
 void run_tcp_server_loop(struct tcp_server* server);

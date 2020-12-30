@@ -227,20 +227,6 @@ void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     }
 }
 
-void close_tcp_conn_by_fd(struct tcp_server* server, int fd) {
-    struct tcp_conn* conn = find_tcp_conn(server, fd);
-    if (conn == 0) {
-        return;
-    }
-    if (atomic_exchange_explicit(&conn->is_closed, 1, memory_order_acq_rel) == 1) {
-        LOG_DEBUG("Trying to close TCP connection that is already closed %s:%d (fd=%d)", ipv4_str(conn->ipv4),
-                  conn->port, conn->fd);
-        return;
-    }
-    LOG_DEBUG("Closing connection %s:%d (fd=%d) because of EOF kevent", ipv4_str(conn->ipv4), conn->port, conn->fd);
-    close_tcp_conn_in_loop(server, conn);
-}
-
 void tcp_server_process_notification(struct tcp_server* server) {
     struct tcp_server_notification notification;
     errno = 0;

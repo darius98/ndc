@@ -14,12 +14,12 @@ void run_tcp_server_loop(struct tcp_server *server) {
 
     struct epoll_event event;
     event.events = EPOLLIN;
-    event.data.fd = server->listen_fd;
+    event.data.ptr = &server->listen_fd;
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server->listen_fd, &event) < 0) {
         LOG_FATAL("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, errno_str(errno));
     }
     event.events = EPOLLIN;
-    event.data.fd = server->notify_pipe[0];
+    event.data.ptr = &server->notify_pipe[0];
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server->notify_pipe[0], &event) < 0) {
         LOG_FATAL("Failed to start server: epoll_ctl() failed errno=%d (%s)", errno, errno_str(errno));
     }
@@ -51,13 +51,12 @@ void run_tcp_server_loop(struct tcp_server *server) {
             if ((events[i].events & EPOLLIN) == 0) {
                 continue;  // TODO: Do something with EPOLLRDHUP
             }
-            int event_fd = events[i].data.fd;
-            if (event_fd == server->listen_fd) {
+            if (events[i].data.ptr == &server->listen_fd) {
                 LOG_DEBUG("Received epoll event on TCP server socket (fd=%d)", server->listen_fd);
                 conn = accept_tcp_conn(server);
                 if (conn != 0) {
                     event.events = EPOLLIN;  // TODO: | EPOLLET;
-                    event.data.fd = conn->fd;
+                    event.data.ptr = conn;
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn->fd, &event) < 0) {
                         LOG_ERROR(
                             "Could not accept TCP connection from %s:%d (fd=%d), epoll_ctl() failed errno=%d (%s)",
@@ -65,17 +64,13 @@ void run_tcp_server_loop(struct tcp_server *server) {
                         close_tcp_conn_in_loop(server, conn);
                     }
                 }
-            } else if (event_fd == server->notify_pipe[0]) {
+            } else if (events[i].data.ptr == &server->notify_pipe[0]) {
                 should_process_notification = 1;
             } else {
-                conn = find_tcp_conn(server, event_fd);
-                if (conn == 0) {
-                    LOG_WARN("Received epoll event on fd=%d, but could not find connection", event_fd);
-                } else {
-                    LOG_DEBUG("Received epoll event on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
-                              conn->fd);
-                    recv_from_tcp_conn(server, conn);
-                }
+                conn = (struct tcp_conn *)events[i].data.ptr;
+                LOG_DEBUG("Received epoll event on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
+                          conn->fd);
+                recv_from_tcp_conn(server, conn);
             }
         }
         if (should_process_notification) {
@@ -87,7 +82,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
 void remove_conn_from_read_loop(struct tcp_server *server, struct tcp_conn *conn) {
     struct epoll_event event;
     event.events = EPOLLIN;  // TODO: | EPOLLET;
-    event.data.fd = conn->fd;
+    event.data.ptr = conn;
     if (epoll_ctl(server->loop_fd, EPOLL_CTL_DEL, conn->fd, &event) < 0) {
         LOG_ERROR("Could not remove TCP connection %s:%d (fd=%d) from read loop, epoll_ctl() failed errno=%d (%s)",
                   ipv4_str(conn->ipv4), conn->port, conn->fd, errno, errno_str(errno));

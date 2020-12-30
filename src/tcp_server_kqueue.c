@@ -60,10 +60,10 @@ void run_tcp_server_loop(struct tcp_server *server) {
             } else if (event_fd == server->notify_pipe[0]) {
                 should_process_notification = 1;
             } else {
+                struct tcp_conn *conn = (struct tcp_conn *)events[i].udata;
                 if (events[i].flags & EV_EOF) {
-                    close_tcp_conn_by_fd(server, event_fd);
+                    close_tcp_conn_in_loop(server, conn);
                 } else if (events[i].filter & EVFILT_READ) {
-                    struct tcp_conn *conn = (struct tcp_conn *)events[i].udata;
                     LOG_DEBUG("Received read kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
                               conn->fd);
                     recv_from_tcp_conn(server, conn);

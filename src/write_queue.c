@@ -64,7 +64,9 @@ static void add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
 
     struct write_task_list* task_list = malloc(sizeof(struct write_task_list));
     if (task_list == 0) {
-        LOG_ERROR("Failed to allocate write task list for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
+        LOG_ERROR("Failed to allocate write task list for connection %s:%d, closing connection", ipv4_str(conn->ipv4),
+                  conn->port);
+        close_tcp_conn(queue->tcp_server, conn);
         tcp_conn_dec_refcount(conn);
         return;
     }
@@ -76,6 +78,7 @@ static void add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
     if (bucket->len == bucket->cap) {
         void* resized = realloc(bucket->entries, sizeof(void*) * bucket->cap * 2);
         if (resized == 0) {
+            close_tcp_conn(queue->tcp_server, conn);
             tcp_conn_dec_refcount(conn);
             free(task_list);
             return;
