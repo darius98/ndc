@@ -95,6 +95,10 @@ static void close_and_log(int fd, int ipv4, int port) {
     }
 }
 
+static int tcp_conn_buf_cap(struct tcp_server* server) {
+    return (int)(server->conf->connection_buffer_size - sizeof(struct tcp_conn) - 1);
+}
+
 struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     int fd;
     struct sockaddr_in client_addr;
@@ -114,7 +118,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         return 0;
     }
 
-    struct tcp_conn* conn = malloc(sizeof(struct tcp_conn) + server->conf->connection_buffer_size);
+    struct tcp_conn* conn = malloc(server->conf->connection_buffer_size);
     if (conn == 0) {
         LOG_ERROR("Failed to allocate memory for new connection: %s:%d", ipv4_str(ipv4), port);
         close_and_log(fd, ipv4, port);
@@ -165,14 +169,14 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
 
     int num_bytes;
     if (conn->tls == 0) {
-        num_bytes = recv(conn->fd, conn->buf, server->conf->connection_buffer_size, MSG_DONTWAIT);
+        num_bytes = recv(conn->fd, conn->buf, tcp_conn_buf_cap(server), MSG_DONTWAIT);
         if (num_bytes < 0) {
             LOG_ERROR("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
                       conn->fd, errno, errno_str(errno));
             return -1;
         }
     } else {
-        num_bytes = recv_tls(conn->tls, conn->buf, server->conf->connection_buffer_size);
+        num_bytes = recv_tls(conn->tls, conn->buf, tcp_conn_buf_cap(server));
     }
     if (num_bytes <= 0) {
         return num_bytes;
