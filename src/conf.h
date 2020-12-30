@@ -23,8 +23,6 @@ struct tcp_server_conf {
 };
 
 struct tcp_write_queue_conf {
-    int num_buckets;
-    int bucket_initial_capacity;
     int events_batch_size;
 };
 

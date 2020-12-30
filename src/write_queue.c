@@ -1,7 +1,6 @@
 #include "write_queue.h"
 
 #include <errno.h>
-#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -10,27 +9,6 @@
 #include "logging.h"
 #include "tcp_server.h"
 #include "tls.h"
-
-static void init_tasks_list_table(struct tcp_conn_table* table, int n_buckets, int bucket_init_cap) {
-    atomic_store_explicit(&table->size, 0, memory_order_release);
-    table->n_buckets = n_buckets;
-    table->buckets = malloc(sizeof(struct tcp_conn_table_bucket) * n_buckets);
-    if (table->buckets == 0) {
-        LOG_FATAL("Failed to allocate buckets array for write task lists table");
-    }
-    for (int i = 0; i < n_buckets; i++) {
-        table->buckets[i].len = 0;
-        table->buckets[i].cap = bucket_init_cap;
-        table->buckets[i].entries = malloc(sizeof(struct tcp_conn*) * bucket_init_cap);
-        if (table->buckets[i].entries == 0) {
-            LOG_FATAL("Failed to allocate bucket %d for write task lists table", i);
-        }
-    }
-}
-
-static struct tcp_conn_table_bucket* fd_bucket(struct write_queue* queue, int fd) {
-    return &queue->table.buckets[fd % queue->table.n_buckets];
-}
 
 static void pop_task(struct tcp_conn* conn, int err) {
     struct write_task* task = conn->wt_head;
@@ -61,52 +39,14 @@ static void add_tcp_conn(struct write_queue* queue, struct tcp_conn* conn) {
         tcp_conn_dec_refcount(conn);
         return;
     }
-
     conn->wt_head = 0;
     conn->wt_tail = 0;
-
-    struct tcp_conn_table_bucket* bucket = fd_bucket(queue, conn->fd);
-    if (bucket->len == bucket->cap) {
-        void* resized = realloc(bucket->entries, sizeof(void*) * bucket->cap * 2);
-        if (resized == 0) {
-            close_tcp_conn(queue->tcp_server, conn);
-            tcp_conn_dec_refcount(conn);
-            return;
-        }
-        bucket->entries = resized;
-        bucket->cap *= 2;
-    }
-    bucket->entries[bucket->len++] = conn;
-    atomic_fetch_add_explicit(&queue->table.size, 1, memory_order_release);
 }
 
-static void remove_tcp_conn(struct write_queue* queue, int fd) {
-    struct tcp_conn* conn = 0;
-    struct tcp_conn_table_bucket* bucket = fd_bucket(queue, fd);
-    for (int i = 0; i < bucket->len; i++) {
-        if (bucket->entries[i]->fd == fd) {
-            conn = bucket->entries[i];
-            bucket->entries[i] = bucket->entries[bucket->len - 1];
-            bucket->len--;
-            break;
-        }
-    }
-    if (conn != 0) {
-        clear_task_list(conn);
-        write_loop_remove_conn(queue, conn);
-        tcp_conn_dec_refcount(conn);
-        atomic_fetch_sub_explicit(&queue->table.size, 1, memory_order_release);
-    }
-}
-
-static struct tcp_conn* get_tcp_conn(struct write_queue* queue, int fd) {
-    struct tcp_conn_table_bucket* bucket = fd_bucket(queue, fd);
-    for (int i = 0; i < bucket->len; i++) {
-        if (bucket->entries[i]->fd == fd) {
-            return bucket->entries[i];
-        }
-    }
-    return 0;
+static void remove_tcp_conn(struct write_queue* queue, struct tcp_conn* conn) {
+    clear_task_list(conn);
+    write_loop_remove_conn(queue, conn);
+    tcp_conn_dec_refcount(conn);
 }
 
 static void* write_queue_worker(void* arg) {
@@ -119,7 +59,6 @@ void init_write_queue(struct write_queue* queue, const struct tcp_write_queue_co
                       struct tcp_server* tcp_server) {
     queue->tcp_server = tcp_server;
     queue->loop_max_events = conf->events_batch_size;
-    init_tasks_list_table(&queue->table, conf->num_buckets, conf->bucket_initial_capacity);
     if (make_nonblocking_pipe(queue->loop_notify_pipe) < 0) {
         LOG_FATAL("Failed to create notify pipe for TCP write queue");
     }
@@ -134,7 +73,6 @@ struct write_worker_notification {
         ww_notify_execute,
         ww_notify_remove
     } type;
-    int fd;
     struct tcp_conn* conn;
     struct write_task* task;
 };
@@ -161,7 +99,7 @@ void write_queue_add_conn(struct write_queue* queue, struct tcp_conn* conn) {
 
 void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn) {
     struct write_worker_notification notification;
-    notification.fd = conn->fd;
+    notification.conn = conn;
     notification.type = ww_notify_remove;
     write_notification(queue, notification);
 }
@@ -183,7 +121,6 @@ void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const ch
     task->cb = cb;
 
     struct write_worker_notification notification;
-    notification.fd = conn->fd;
     notification.conn = conn;
     notification.task = task;
     notification.type = ww_notify_execute;
@@ -247,7 +184,7 @@ void write_queue_process_notification(struct write_queue* queue) {
             write_queue_process_writes(queue, notification.conn);
         }
     } else if (notification.type == ww_notify_remove) {
-        remove_tcp_conn(queue, notification.fd);
+        remove_tcp_conn(queue, notification.conn);
     } else if (notification.type == ww_notify_add) {
         add_tcp_conn(queue, notification.conn);
     }
