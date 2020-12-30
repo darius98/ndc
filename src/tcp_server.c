@@ -13,66 +13,8 @@
 #include "tls.h"
 #include "write_queue.h"
 
-static void init_tcp_conn_table(struct tcp_conn_table* conn_table, int n_buckets, int bucket_init_cap) {
-    conn_table->size = 0;
-    conn_table->n_buckets = n_buckets;
-    conn_table->buckets = malloc(sizeof(struct tcp_conn_table_bucket) * n_buckets);
-    if (conn_table->buckets == 0) {
-        LOG_FATAL("Failed to allocate buckets for tcp_conn_table");
-    }
-    for (int i = 0; i < conn_table->n_buckets; i++) {
-        conn_table->buckets[i].size = 0;
-        conn_table->buckets[i].capacity = bucket_init_cap;
-        conn_table->buckets[i].entries = malloc(sizeof(void*) * conn_table->buckets[i].capacity);
-        if (conn_table->buckets[i].entries == 0) {
-            LOG_FATAL("Failed to allocate entries for bucket %d of tcp_conn_table", i);
-        }
-    }
-}
-
-static int tcp_conn_table_insert(struct tcp_conn_table* conn_table, struct tcp_conn* conn) {
-    int bucket_id = conn->fd % conn_table->n_buckets;
-    struct tcp_conn_table_bucket* bucket = &conn_table->buckets[bucket_id];
-    if (bucket->size == bucket->capacity) {
-        void* resized = realloc(bucket->entries, sizeof(void*) * bucket->capacity * 2);
-        if (resized == 0) {
-            return -1;
-        }
-        bucket->entries = resized;
-        bucket->capacity *= 2;
-    }
-    bucket->entries[bucket->size++] = conn;
-    conn_table->size++;
-    return 0;
-}
-
-static void tcp_conn_table_erase(struct tcp_conn_table* conn_table, struct tcp_conn* conn) {
-    int bucket_id = conn->fd % conn_table->n_buckets;
-    struct tcp_conn_table_bucket* bucket = &conn_table->buckets[bucket_id];
-    for (int i = 0; i < bucket->size; i++) {
-        if (bucket->entries[i] == conn) {
-            bucket->entries[i] = bucket->entries[bucket->size - 1];
-            bucket->size -= 1;
-            conn_table->size -= 1;
-            break;
-        }
-    }
-}
-
-struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd) {
-    int bucket_id = fd % server->conn_table.n_buckets;
-    struct tcp_conn_table_bucket* bucket = &server->conn_table.buckets[bucket_id];
-    for (int i = 0; i < bucket->size; i++) {
-        if (bucket->entries[i]->fd == fd) {
-            return bucket->entries[i];
-        }
-    }
-    return 0;
-}
-
 void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
                      const struct tcp_write_queue_conf* w_queue_conf) {
-    init_tcp_conn_table(&server->conn_table, conf->num_buckets, conf->bucket_initial_capacity);
     init_write_queue(&server->w_queue, w_queue_conf, server);
     server->tls_ctx = init_tls(conf->tls_cert_pem);
     server->conf = conf;
@@ -140,17 +82,9 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     conn->ipv4 = ipv4;
     conn->port = port;
     atomic_store_explicit(&conn->is_closed, 0, memory_order_release);
-    if (tcp_conn_table_insert(&server->conn_table, conn) < 0) {
-        LOG_ERROR("Failed to grow tcp connection table bucket");
-        free_tls(conn->tls);
-        free(conn);
-        close_and_log(fd, ipv4, port);
-        return 0;
-    }
     write_queue_add_conn(&server->w_queue, conn);
     if (tcp_conn_after_open_callback(server->cb_data, conn) < 0) {
         write_queue_remove_conn(&server->w_queue, conn);
-        tcp_conn_table_erase(&server->conn_table, conn);
         free_tls(conn->tls);
         free(conn);
         close_and_log(fd, ipv4, port);
@@ -199,7 +133,6 @@ struct tcp_server_notification {
 
 void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* conn) {
     tcp_conn_before_close_callback(server->cb_data, conn);
-    tcp_conn_table_erase(&server->conn_table, conn);
     write_queue_remove_conn(&server->w_queue, conn);
     remove_conn_from_read_loop(server, conn);
     LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);

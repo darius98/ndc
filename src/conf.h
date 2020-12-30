@@ -17,8 +17,6 @@ struct file_cache_conf {
 
 struct tcp_server_conf {
     int backlog;
-    int num_buckets;
-    int bucket_initial_capacity;
     int events_batch_size;
     int connection_buffer_size;
     char* tls_cert_pem;

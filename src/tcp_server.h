@@ -15,20 +15,7 @@ struct tcp_conn {
     char buf[];
 };
 
-struct tcp_conn_table_bucket {
-    int size;
-    int capacity;
-    struct tcp_conn** entries;
-};
-
-struct tcp_conn_table {
-    int size;
-    int n_buckets;
-    struct tcp_conn_table_bucket* buckets;
-};
-
 struct tcp_server {
-    struct tcp_conn_table conn_table;
     struct write_queue w_queue;
     const struct tcp_server_conf* conf;
     int listen_fd;
@@ -42,8 +29,6 @@ struct tcp_server {
 /// Initialize a TCP server. Note: Aborts on failure.
 void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
                      const struct tcp_write_queue_conf* w_queue_conf);
-
-struct tcp_conn* find_tcp_conn(struct tcp_server* server, int fd);
 
 struct tcp_conn* accept_tcp_conn(struct tcp_server* server);
 

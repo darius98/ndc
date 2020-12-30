@@ -199,8 +199,6 @@ struct conf default_conf() {
         },
         .tcp_server = {
             .backlog = 2048,
-            .num_buckets = 23,
-            .bucket_initial_capacity = 4,
             .events_batch_size = 2048,
             .connection_buffer_size = 65536,
             .tls_cert_pem = "none",
@@ -220,7 +218,7 @@ struct conf default_conf() {
 
 struct conf load_conf() {
     struct conf conf = default_conf();
-#define NUM_CONF_ENTRIES 17
+#define NUM_CONF_ENTRIES 15
     struct conf_entry entries[NUM_CONF_ENTRIES] = {
         {"logging.access_log", &conf.logging.access_log, parse_file_path, 0},
         {"logging.server_log", &conf.logging.server_log, parse_file_path, 0},
@@ -229,8 +227,6 @@ struct conf load_conf() {
         {"file_cache.num_buckets", &conf.file_cache.num_buckets, parse_int, 0},
         {"file_cache.bucket_initial_capacity", &conf.file_cache.bucket_initial_capacity, parse_int, 0},
         {"tcp_server.backlog", &conf.tcp_server.backlog, parse_int, 0},
-        {"tcp_server.num_buckets", &conf.tcp_server.num_buckets, parse_int, 0},
-        {"tcp_server.bucket_initial_capacity", &conf.tcp_server.bucket_initial_capacity, parse_int, 0},
         {"tcp_server.events_batch_size", &conf.tcp_server.events_batch_size, parse_int, 0},
         {"tcp_server.connection_buffer_size", &conf.tcp_server.connection_buffer_size, parse_int, 0},
         {"tcp_server.tls_cert_pem", &conf.tcp_server.tls_cert_pem, parse_file_path, 0},
