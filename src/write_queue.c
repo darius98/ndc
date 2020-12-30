@@ -57,7 +57,7 @@ static void clear_task_list(struct tcp_conn* conn) {
 }
 
 static void add_tcp_conn(struct write_queue* queue, struct tcp_conn* conn) {
-    if (write_loop_add_fd(queue, conn->fd) < 0) {
+    if (write_loop_add_conn(queue, conn) < 0) {
         tcp_conn_dec_refcount(conn);
         return;
     }
@@ -93,7 +93,7 @@ static void remove_tcp_conn(struct write_queue* queue, int fd) {
     }
     if (conn != 0) {
         clear_task_list(conn);
-        write_loop_remove_fd(queue, conn->fd);
+        write_loop_remove_conn(queue, conn);
         tcp_conn_dec_refcount(conn);
         atomic_fetch_sub_explicit(&queue->table.size, 1, memory_order_release);
     }
@@ -204,17 +204,12 @@ static int push_task(struct tcp_conn* conn, struct write_task* task) {
     return 0;
 }
 
-void write_queue_process_writes(struct write_queue* queue, int fd) {
-    struct tcp_conn* conn = get_tcp_conn(queue, fd);
-    if (conn == 0) {
-        LOG_ERROR("Could not find write task list for fd=%d", fd);
-        return;
-    }
+void write_queue_process_writes(struct write_queue* queue, struct tcp_conn* conn) {
     struct write_task* task = conn->wt_head;
     while (task != 0) {
         ssize_t chunk_sz;
         if (conn->tls == 0) {
-            chunk_sz = write(fd, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
+            chunk_sz = write(conn->fd, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
             if (chunk_sz < 0 && errno != EWOULDBLOCK) {
                 pop_task(conn, errno);
                 close_tcp_conn(queue->tcp_server, conn);
@@ -249,7 +244,7 @@ void write_queue_process_notification(struct write_queue* queue) {
     }
     if (notification.type == ww_notify_execute) {
         if (push_task(notification.conn, notification.task) == 0) {
-            write_queue_process_writes(queue, notification.fd);
+            write_queue_process_writes(queue, notification.conn);
         }
     } else if (notification.type == ww_notify_remove) {
         remove_tcp_conn(queue, notification.fd);

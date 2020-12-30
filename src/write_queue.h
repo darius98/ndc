@@ -50,7 +50,7 @@ void write_queue_remove_conn(struct write_queue* queue, struct tcp_conn* conn);
 void write_queue_push(struct write_queue* queue, struct tcp_conn* conn, const char* buf, int buf_len, void* cb_data,
                       write_task_cb cb);
 
-void write_queue_process_writes(struct write_queue* queue, int fd);
+void write_queue_process_writes(struct write_queue* queue, struct tcp_conn* conn);
 
 void write_queue_process_notification(struct write_queue* queue);
 
@@ -59,8 +59,8 @@ void init_write_loop(struct write_queue* queue);
 
 void run_write_loop(struct write_queue* queue);
 
-int write_loop_add_fd(struct write_queue* queue, int fd);
+int write_loop_add_conn(struct write_queue* queue, struct tcp_conn* conn);
 
-void write_loop_remove_fd(struct write_queue* queue, int fd);
+void write_loop_remove_conn(struct write_queue* queue, struct tcp_conn* conn);
 
 #endif
