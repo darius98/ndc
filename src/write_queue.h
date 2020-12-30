@@ -18,27 +18,21 @@ struct write_task {
     struct write_task* next;
 };
 
-struct write_task_list {
-    struct tcp_conn* conn;
-    struct write_task* head;
-    struct write_task* tail;
-};
-
-struct write_task_list_table_bucket {
+struct tcp_conn_table_bucket {
     int len;
     int cap;
-    struct write_task_list** entries;
+    struct tcp_conn** entries;
 };
 
-struct write_task_list_table {
+struct tcp_conn_table {
     _Atomic(int) size;
     int n_buckets;
-    struct write_task_list_table_bucket* buckets;
+    struct tcp_conn_table_bucket* buckets;
 };
 
 struct write_queue {
     struct tcp_server* tcp_server;
-    struct write_task_list_table task_lists;
+    struct tcp_conn_table table;
     int loop_notify_pipe[2];
     int loop_fd;
     int loop_max_events;
