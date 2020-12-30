@@ -62,14 +62,7 @@ static void add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
         return;
     }
 
-    struct write_task_list* task_list = malloc(sizeof(struct write_task_list));
-    if (task_list == 0) {
-        LOG_ERROR("Failed to allocate write task list for connection %s:%d, closing connection", ipv4_str(conn->ipv4),
-                  conn->port);
-        close_tcp_conn(queue->tcp_server, conn);
-        tcp_conn_dec_refcount(conn);
-        return;
-    }
+    struct write_task_list* task_list = &conn->wt_list;
     task_list->conn = conn;
     task_list->head = 0;
     task_list->tail = 0;
@@ -80,7 +73,6 @@ static void add_task_list(struct write_queue* queue, struct tcp_conn* conn) {
         if (resized == 0) {
             close_tcp_conn(queue->tcp_server, conn);
             tcp_conn_dec_refcount(conn);
-            free(task_list);
             return;
         }
         bucket->entries = resized;
@@ -107,7 +99,6 @@ static void remove_task_list(struct write_queue* queue, int fd) {
                   task_list->conn->port, task_list->conn->fd);
         write_loop_remove_fd(queue, task_list->conn->fd);
         tcp_conn_dec_refcount(task_list->conn);
-        free(task_list);
         atomic_fetch_sub_explicit(&queue->task_lists.size, 1, memory_order_release);
     }
 }

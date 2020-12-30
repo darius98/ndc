@@ -9,6 +9,7 @@ struct tcp_conn {
     _Atomic(int) is_closed;
     int fd;
     void* tls;
+    struct write_task_list wt_list;
     void* user_data;
     int ipv4;
     int port;
