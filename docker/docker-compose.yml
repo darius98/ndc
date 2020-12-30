@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: /ndc/scripts/run_in_docker.sh
+    command: /ndc/docker/run_in_docker.sh
     working_dir: /ndc
     environment:
       NDC_IMAGE_NAME: "ubuntu_20_04"
@@ -13,4 +13,4 @@ services:
     ports:
       - 1337:1337
     volumes:
-      - ./:/ndc
+      - ../:/ndc
