@@ -6,14 +6,13 @@
 
 struct tcp_conn {
     _Atomic(int) ref_count;
+    _Atomic(int) is_closed;
     int fd;
-    int buf_cap;
-    char* buf;
     void* tls;
     void* user_data;
     int ipv4;
     int port;
-    _Atomic(int) is_closed;
+    char buf[];
 };
 
 struct tcp_conn_table_bucket {

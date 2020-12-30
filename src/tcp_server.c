@@ -114,7 +114,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         return 0;
     }
 
-    struct tcp_conn* conn = malloc(sizeof(struct tcp_conn));
+    struct tcp_conn* conn = malloc(sizeof(struct tcp_conn) + server->conf->connection_buffer_size);
     if (conn == 0) {
         LOG_ERROR("Failed to allocate memory for new connection: %s:%d", ipv4_str(ipv4), port);
         close_and_log(fd, ipv4, port);
@@ -122,18 +122,9 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     }
     atomic_store_explicit(&conn->ref_count, 1, memory_order_release);
     conn->fd = fd;
-    conn->buf_cap = server->conf->connection_buffer_size;
-    conn->buf = malloc(conn->buf_cap + 1);
-    if (conn->buf == 0) {
-        LOG_ERROR("Failed to allocate buffer for new connection: %s:%d", ipv4_str(ipv4), port);
-        free(conn);
-        close_and_log(fd, ipv4, port);
-        return 0;
-    }
     if (server->tls_ctx != 0) {
         conn->tls = new_tls_for_conn(server->tls_ctx, fd);
         if (conn->tls == 0) {
-            free(conn->buf);
             free(conn);
             close_and_log(fd, ipv4, port);
             return 0;
@@ -148,7 +139,6 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     if (tcp_conn_table_insert(&server->conn_table, conn) < 0) {
         LOG_ERROR("Failed to grow tcp connection table bucket");
         free_tls(conn->tls);
-        free(conn->buf);
         free(conn);
         close_and_log(fd, ipv4, port);
         return 0;
@@ -158,7 +148,6 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         write_queue_remove_conn(&server->w_queue, conn);
         tcp_conn_table_erase(&server->conn_table, conn);
         free_tls(conn->tls);
-        free(conn->buf);
         free(conn);
         close_and_log(fd, ipv4, port);
         return 0;
@@ -176,14 +165,14 @@ int recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
 
     int num_bytes;
     if (conn->tls == 0) {
-        num_bytes = recv(conn->fd, conn->buf, conn->buf_cap, MSG_DONTWAIT);
+        num_bytes = recv(conn->fd, conn->buf, server->conf->connection_buffer_size, MSG_DONTWAIT);
         if (num_bytes < 0) {
             LOG_ERROR("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
                       conn->fd, errno, errno_str(errno));
             return -1;
         }
     } else {
-        num_bytes = recv_tls(conn->tls, conn->buf, conn->buf_cap);
+        num_bytes = recv_tls(conn->tls, conn->buf, server->conf->connection_buffer_size);
     }
     if (num_bytes <= 0) {
         return num_bytes;
@@ -270,7 +259,6 @@ void tcp_conn_dec_refcount(struct tcp_conn* conn) {
         LOG_DEBUG("Reclaiming memory and file descriptor for tcp connection %s:%d (fd=%d)", ipv4_str(conn->ipv4),
                   conn->port, conn->fd);
         free_tls(conn->tls);
-        free(conn->buf);
         close_and_log(conn->fd, conn->ipv4, conn->port);
         free(conn);
     }
