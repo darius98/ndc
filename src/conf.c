@@ -216,8 +216,7 @@ struct conf default_conf() {
 
 struct conf load_conf() {
     struct conf conf = default_conf();
-#define NUM_CONF_ENTRIES 13
-    struct conf_entry entries[NUM_CONF_ENTRIES] = {
+    struct conf_entry entries[] = {
         {"logging.access_log", &conf.logging.access_log, parse_file_path, 0},
         {"logging.server_log", &conf.logging.server_log, parse_file_path, 0},
         {"logging.min_level", &conf.logging.min_level, parse_log_level, 0},
@@ -232,7 +231,6 @@ struct conf load_conf() {
         {"http.request_buffer_size", &conf.http.request_buffer_size, parse_int, 0},
         {"http.num_workers", &conf.http.num_workers, parse_int, 0},
     };
-    conf.is_from_file = parse_conf_file(conf.file_path, entries, NUM_CONF_ENTRIES);
-#undef NUM_CONF_ENTRIES
+    conf.is_from_file = parse_conf_file(conf.file_path, entries, sizeof(entries) / sizeof(struct conf_entry));
     return conf;
 }
