@@ -1,8 +1,8 @@
 #include "app.h"
 
-#include "file_cache.h"
+#include "http_handlers/static_files/file_cache.h"
+#include "http_handlers/static_files/static_file_server.h"
 #include "http_server.h"
-#include "static_file_server.h"
 #include "tcp_server.h"
 
 void run_ndc_application_sync(const struct conf* conf) {
@@ -10,7 +10,7 @@ void run_ndc_application_sync(const struct conf* conf) {
     init_file_cache(&file_cache, &conf->file_cache);
 
     struct tcp_server tcp_server;
-    init_tcp_server(&tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_queue);
+    init_tcp_server(&tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_loop);
 
     struct http_server http_server;
     init_http_server(&http_server, &conf->http);

@@ -4,11 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../../http_server.h"
+#include "../../logging.h"
+#include "../../tcp_server.h"
+#include "../../tcp_write_loop.h"
 #include "file_cache.h"
-#include "http_server.h"
-#include "logging.h"
-#include "tcp_server.h"
-#include "write_queue.h"
 
 static const char* http_404_response =
     "HTTP/1.1 404 Not found\r\n"
@@ -118,7 +118,7 @@ static void serve_static_file(struct static_file_server* server, struct http_req
 
     struct mapped_file* file = open_file(server->cache, path);
     if (file == 0) {
-        write_queue_push(&server->tcp_server->w_queue, req->conn, http_404_response, http_404_response_len, cb_data,
+        tcp_write_loop_push(&server->tcp_server->w_loop, req->conn, http_404_response, http_404_response_len, cb_data,
                          http_404_write_cb);
         return;
     }
@@ -149,9 +149,9 @@ static void serve_static_file(struct static_file_server* server, struct http_req
         delete_http_req(server->http_server, req);
         return;
     }
-    write_queue_push(&server->tcp_server->w_queue, req->conn, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data,
+    tcp_write_loop_push(&server->tcp_server->w_loop, req->conn, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data,
                      http_200_response_headers_cb);
-    write_queue_push(&server->tcp_server->w_queue, req->conn, file->content, file->content_len, cb_data,
+    tcp_write_loop_push(&server->tcp_server->w_loop, req->conn, file->content, file->content_len, cb_data,
                      http_200_response_body_cb);
 }
 

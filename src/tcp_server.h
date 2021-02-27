@@ -2,7 +2,7 @@
 #define NDC_TCP_SERVER_H_
 
 #include "conf.h"
-#include "write_queue.h"
+#include "tcp_write_loop.h"
 
 struct tcp_conn {
     _Atomic(int) ref_count;
@@ -18,7 +18,7 @@ struct tcp_conn {
 };
 
 struct tcp_server {
-    struct write_queue w_queue;
+    struct tcp_write_loop w_loop;
     const struct tcp_server_conf* conf;
     int listen_fd;
     int loop_fd;
@@ -30,7 +30,7 @@ struct tcp_server {
 
 /// Initialize a TCP server. Note: Aborts on failure.
 void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
-                     const struct tcp_write_queue_conf* w_queue_conf);
+                     const struct tcp_write_loop_conf* w_loop_conf);
 
 struct tcp_conn* accept_tcp_conn(struct tcp_server* server);
 

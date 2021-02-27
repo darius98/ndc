@@ -203,7 +203,7 @@ struct conf default_conf() {
             .connection_buffer_size = 65536,
             .tls_cert_pem = "none",
         },
-        .tcp_write_queue = {
+        .tcp_write_loop = {
             .events_batch_size = 2048,
         },
         .http = {
@@ -227,7 +227,7 @@ struct conf load_conf() {
         {"tcp_server.events_batch_size", &conf.tcp_server.events_batch_size, parse_int, 0},
         {"tcp_server.connection_buffer_size", &conf.tcp_server.connection_buffer_size, parse_int, 0},
         {"tcp_server.tls_cert_pem", &conf.tcp_server.tls_cert_pem, parse_file_path, 0},
-        {"tcp_write_queue.events_batch_size", &conf.tcp_write_queue.events_batch_size, parse_int, 0},
+        {"tcp_write_loop.events_batch_size", &conf.tcp_write_loop.events_batch_size, parse_int, 0},
         {"http.request_buffer_size", &conf.http.request_buffer_size, parse_int, 0},
         {"http.num_workers", &conf.http.num_workers, parse_int, 0},
     };

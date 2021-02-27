@@ -11,11 +11,11 @@
 #include "fd.h"
 #include "logging.h"
 #include "tls.h"
-#include "write_queue.h"
+#include "tcp_write_loop.h"
 
 void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
-                     const struct tcp_write_queue_conf* w_queue_conf) {
-    init_write_queue(&server->w_queue, w_queue_conf, server);
+                     const struct tcp_write_loop_conf* w_loop_conf) {
+    init_tcp_write_loop(&server->w_loop, w_loop_conf, server);
     server->tls_ctx = init_tls(conf->tls_cert_pem);
     server->conf = conf;
     server->port = port;
@@ -82,9 +82,9 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     conn->ipv4 = ipv4;
     conn->port = port;
     atomic_store_explicit(&conn->is_closed, 0, memory_order_release);
-    write_queue_add_conn(&server->w_queue, conn);
+    tcp_write_loop_add_conn(&server->w_loop, conn);
     if (tcp_conn_after_open_callback(server->cb_data, conn) < 0) {
-        write_queue_remove_conn(&server->w_queue, conn);
+        tcp_write_loop_remove_conn(&server->w_loop, conn);
         free_tls(conn->tls);
         free(conn);
         close_and_log(fd, ipv4, port);
@@ -133,7 +133,7 @@ struct tcp_server_notification {
 
 void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* conn) {
     tcp_conn_before_close_callback(server->cb_data, conn);
-    write_queue_remove_conn(&server->w_queue, conn);
+    tcp_write_loop_remove_conn(&server->w_loop, conn);
     remove_conn_from_read_loop(server, conn);
     LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
     tcp_conn_dec_refcount(conn);

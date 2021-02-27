@@ -15,25 +15,25 @@ set(ndc_sources
         src/conf.c
         src/fd.c
         src/ff_pthread.c
-        src/file_cache.c
+        src/http_handlers/static_files/file_cache.c
         src/http_req.c
         src/http_server.c
         src/logging.c
         src/main.c
         src/tls.c
-        src/static_file_server.c
+        src/http_handlers/static_files/static_file_server.c
         src/tcp_server.c
-        src/write_queue.c)
+        src/tcp_write_loop.c)
 if (USE_KQUEUE)
     message(STATUS "Using kqueue for tcp loop")
     list(APPEND ndc_sources
             src/tcp_server_kqueue.c
-            src/write_queue_kqueue.c)
+            src/tcp_write_loop_kqueue.c)
 elseif (USE_EPOLL)
     message(STATUS "Using epoll for tcp loop")
     list(APPEND ndc_sources
             src/tcp_server_epoll.c
-            src/write_queue_epoll.c)
+            src/tcp_write_loop_epoll.c)
 else ()
     message(FATAL_ERROR "No suitable backend for tcp loop (kqueue and epoll are supported)")
 endif()

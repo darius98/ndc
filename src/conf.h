@@ -22,7 +22,7 @@ struct tcp_server_conf {
     char* tls_cert_pem;
 };
 
-struct tcp_write_queue_conf {
+struct tcp_write_loop_conf {
     int events_batch_size;
 };
 
@@ -37,7 +37,7 @@ struct conf {
     struct logging_conf logging;
     struct file_cache_conf file_cache;
     struct tcp_server_conf tcp_server;
-    struct tcp_write_queue_conf tcp_write_queue;
+    struct tcp_write_loop_conf tcp_write_loop;
     struct http_conf http;
 };
 
