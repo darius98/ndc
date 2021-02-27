@@ -1,8 +1,8 @@
 #ifndef NDC_FILE_CACHE_H_
 #define NDC_FILE_CACHE_H_
 
-#include "../../conf.h"
-#include "../../ff_pthread.h"
+#include "../../conf/conf.h"
+#include "../../utils/ff_pthread.h"
 
 struct mapped_file {
     int ref_count;

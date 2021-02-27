@@ -1,8 +1,8 @@
 #ifndef NDC_WRITE_SERVER_H_
 #define NDC_WRITE_SERVER_H_
 
-#include "conf.h"
-#include "ff_pthread.h"
+#include "../conf/conf.h"
+#include "../utils/ff_pthread.h"
 
 struct tcp_server;
 struct tcp_conn;

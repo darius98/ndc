@@ -5,8 +5,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "fd.h"
-#include "logging.h"
+#include "../logging/logging.h"
+#include "../utils/fd.h"
 #include "tcp_server.h"
 #include "tls.h"
 

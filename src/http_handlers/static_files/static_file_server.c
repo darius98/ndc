@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../../http_server.h"
-#include "../../logging.h"
-#include "../../tcp_server.h"
+#include "../../http_server/http_server.h"
+#include "../../http_server/tcp_server.h"
+#include "../../logging/logging.h"
 #include "file_cache.h"
 
 static const char* http_404_response =

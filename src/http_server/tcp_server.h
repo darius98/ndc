@@ -1,7 +1,7 @@
 #ifndef NDC_TCP_SERVER_H_
 #define NDC_TCP_SERVER_H_
 
-#include "conf.h"
+#include "../conf/conf.h"
 #include "tcp_write_loop.h"
 
 struct tcp_conn {

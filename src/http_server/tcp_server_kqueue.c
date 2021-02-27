@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <sys/event.h>
 
-#include "logging.h"
+#include "../logging/logging.h"
 #include "tcp_server.h"
 
 void run_tcp_server_loop(struct tcp_server *server) {

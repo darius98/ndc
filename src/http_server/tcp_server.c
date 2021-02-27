@@ -8,10 +8,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "fd.h"
-#include "logging.h"
-#include "tls.h"
+#include "../logging/logging.h"
+#include "../utils/fd.h"
 #include "tcp_write_loop.h"
+#include "tls.h"
 
 void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
                      const struct tcp_write_loop_conf* w_loop_conf) {

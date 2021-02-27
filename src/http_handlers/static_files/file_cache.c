@@ -8,7 +8,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "../../logging.h"
+#include "../../logging/logging.h"
 
 void init_file_cache(struct file_cache* cache, const struct file_cache_conf* conf) {
     ff_pthread_mutex_init(&cache->lock, 0);

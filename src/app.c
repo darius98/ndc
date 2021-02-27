@@ -2,8 +2,8 @@
 
 #include "http_handlers/static_files/file_cache.h"
 #include "http_handlers/static_files/static_file_server.h"
-#include "http_server.h"
-#include "tcp_server.h"
+#include "http_server/http_server.h"
+#include "http_server/tcp_server.h"
 
 int always_should_handle(void* data, struct http_req* req) {
     return 1;

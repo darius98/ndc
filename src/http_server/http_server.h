@@ -1,8 +1,8 @@
 #ifndef NDC_HTTP_SERVER_H_
 #define NDC_HTTP_SERVER_H_
 
-#include "conf.h"
-#include "ff_pthread.h"
+#include "../conf/conf.h"
+#include "../utils/ff_pthread.h"
 #include "http_req.h"
 
 struct http_handler {

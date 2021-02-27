@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "logging.h"
+#include "../logging/logging.h"
 #include "tcp_server.h"
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {

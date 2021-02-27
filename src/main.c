@@ -1,8 +1,8 @@
 #include <signal.h>
 
 #include "app.h"
-#include "conf.h"
-#include "logging.h"
+#include "conf/conf.h"
+#include "logging/logging.h"
 
 int main() {
     // Ignore sigpipe, since we handle broken pipe errors in code.

@@ -4,7 +4,7 @@
 #include <openssl/ssl.h>
 #include <string.h>
 
-#include "logging.h"
+#include "../logging/logging.h"
 
 static int print_errors(const char* str, __attribute__((unused)) size_t len, __attribute__((unused)) void* u) {
     // The OpenSSL error always contains an extra newline

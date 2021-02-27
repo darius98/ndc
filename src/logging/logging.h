@@ -1,7 +1,7 @@
 #ifndef NDC_LOGGING_H_
 #define NDC_LOGGING_H_
 
-#include "conf.h"
+#include "../conf/conf.h"
 
 #define LOG_LEVEL_DEBUG 0
 #define LOG_LEVEL_INFO 1

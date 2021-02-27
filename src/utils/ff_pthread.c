@@ -1,6 +1,6 @@
 #include "ff_pthread.h"
 
-#include "logging.h"
+#include "../logging/logging.h"
 
 static void fail_fast(const char* func, int ret) {
     if (ret != 0) {

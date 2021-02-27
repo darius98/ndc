@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "logging.h"
+#include "../logging/logging.h"
 
 static const char* get_config_file_path() {
     const char* c = getenv(NDC_CONF_FILE_ENV_VAR);
