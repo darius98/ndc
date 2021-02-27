@@ -50,7 +50,14 @@ static void* http_worker(void* arg) {
         struct http_req* req = http_server_pop_req(server);
         LOG_DEBUG("Processing HTTP request %s %s from %s:%d", req_method(req), req_path(req), ipv4_str(req->conn->ipv4),
                   req->conn->port);
-        on_http_req_callback(server->cb_data, req);
+        for (int i = 0; i < server->handlers_len; i++) {
+            if (server->handlers[i].should_handle(server->handlers[i].data, req)) {
+                LOG_DEBUG("Request %s %s from %s:%d processed by handler %s", req_method(req), req_path(req),
+                          ipv4_str(req->conn->ipv4), req->conn->port, server->handlers[i].name);
+                server->handlers[i].handle(server->handlers[i].data, req);
+                break;
+            }
+        }
     }
     return 0;
 }
@@ -62,6 +69,12 @@ void init_http_server(struct http_server* server, const struct http_conf* conf) 
     ff_pthread_mutex_init(&server->lock, 0);
     ff_pthread_cond_init(&server->cond_var, 0);
     atomic_store_explicit(&server->stopped, 0, memory_order_release);
+    server->handlers_len = 0;
+    server->handlers_cap = 4;
+    server->handlers = malloc(4 * sizeof(struct http_handler));
+    if (server->handlers == 0) {
+        LOG_FATAL("Failed to allocate memory for initial HTTP handlers array.");
+    }
     server->num_workers = conf->num_workers;
     server->workers = malloc(conf->num_workers * sizeof(pthread_t));
     if (server->workers == 0) {
@@ -70,6 +83,18 @@ void init_http_server(struct http_server* server, const struct http_conf* conf) 
     for (int i = 0; i < conf->num_workers; i++) {
         ff_pthread_create(&server->workers[i], 0, http_worker, server);
     }
+}
+
+void install_http_handler(struct http_server* server, struct http_handler handler) {
+    if (server->handlers_len == server->handlers_cap) {
+        void* resized = realloc(server->handlers, sizeof(struct http_handler) * server->handlers_cap * 2);
+        if (resized == 0) {
+            LOG_FATAL("Failed to grow HTTP handlers array");
+        }
+        server->handlers = resized;
+        server->handlers_cap *= 2;
+    }
+    server->handlers[server->handlers_len++] = handler;
 }
 
 void delete_http_req(struct http_server* server, struct http_req* req) {

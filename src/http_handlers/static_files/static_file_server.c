@@ -7,7 +7,6 @@
 #include "../../http_server.h"
 #include "../../logging.h"
 #include "../../tcp_server.h"
-#include "../../tcp_write_loop.h"
 #include "file_cache.h"
 
 static const char* http_404_response =
@@ -90,7 +89,8 @@ static void http_200_response_body_cb(void* data, struct tcp_conn* conn, int err
     free(cb_data);
 }
 
-static void serve_static_file(struct static_file_server* server, struct http_req* req) {
+void static_file_server_handle(void* data, struct http_req* req) {
+    struct static_file_server* server = (struct static_file_server*)data;
     char* path = malloc(server->base_dir_len + strlen(req_path(req)) + 1);
     if (path == 0) {
         LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
@@ -153,8 +153,4 @@ static void serve_static_file(struct static_file_server* server, struct http_req
                      http_200_response_headers_cb);
     tcp_write_loop_push(&server->tcp_server->w_loop, req->conn, file->content, file->content_len, cb_data,
                      http_200_response_body_cb);
-}
-
-void on_http_req_callback(void* cb_data, struct http_req* req) {
-    serve_static_file((struct static_file_server*)cb_data, req);
 }

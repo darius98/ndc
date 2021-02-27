@@ -4,6 +4,7 @@
 struct file_cache;
 struct tcp_server;
 struct http_server;
+struct http_req;
 
 struct static_file_server {
     int base_dir_len;
@@ -17,5 +18,7 @@ struct static_file_server {
 /// Initialize a static file server. Note: Aborts on failure.
 void init_static_file_server(struct static_file_server* server, struct file_cache* cache, struct tcp_server* tcp_server,
                              struct http_server* http_server, const char* base_dir);
+
+void static_file_server_handle(void* data, struct http_req* req);
 
 #endif
