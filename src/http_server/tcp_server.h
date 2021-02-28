@@ -4,6 +4,8 @@
 #include "../conf/conf.h"
 #include "tcp_write_loop.h"
 
+#include <stdint.h>
+
 struct tcp_server;
 
 struct tcp_conn {
@@ -15,7 +17,7 @@ struct tcp_conn {
     struct write_task* wt_head;
     struct write_task* wt_tail;
     void* user_data;
-    int ipv4;  // TODO: Unsigned.
+    uint32_t ipv4;
     int port;
     char buf[];
 };

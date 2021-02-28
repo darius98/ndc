@@ -64,7 +64,7 @@ static void* http_worker(void* arg) {
 }
 
 static struct http_req* new_http_req(struct http_server* server, struct tcp_conn* conn) {
-    int ipv4 = conn->ipv4;
+    uint32_t ipv4 = conn->ipv4;
     int port = conn->port;
     struct http_req* req = malloc(sizeof(struct http_req));
     if (req == 0) {

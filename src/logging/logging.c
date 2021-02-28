@@ -128,7 +128,7 @@ const char* errno_str(int err) {
 }
 
 static __thread char ipv4_str_buf[INET_ADDRSTRLEN];
-const char* ipv4_str(int ipv4) {
+const char* ipv4_str(uint32_t ipv4) {
     inet_ntop(AF_INET, &ipv4, ipv4_str_buf, INET_ADDRSTRLEN);
     return ipv4_str_buf;
 }

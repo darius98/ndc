@@ -3,6 +3,8 @@
 
 #include "../conf/conf.h"
 
+#include <stdint.h>
+
 #define LOG_LEVEL_DEBUG 0
 #define LOG_LEVEL_INFO 1
 #define LOG_LEVEL_WARN 2
@@ -24,7 +26,7 @@ __attribute__((noreturn)) void internal_log_fatal_message(const char* filename, 
 
 const char* errno_str(int err);
 
-const char* ipv4_str(int ipv4);
+const char* ipv4_str(uint32_t ipv4);
 
 // Default logging level is info.
 #ifndef NDC_LOG_LEVEL

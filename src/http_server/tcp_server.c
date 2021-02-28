@@ -34,7 +34,7 @@ void init_tcp_server(struct tcp_server* server, int port, const struct tcp_serve
     }
 }
 
-static void close_and_log(int fd, int ipv4, int port) {
+static void close_and_log(int fd, uint32_t ipv4, int port) {
     if (close(fd) < 0) {
         LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4), port,
                   errno, errno_str(errno));
@@ -55,7 +55,7 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         return 0;
     }
 
-    int ipv4 = client_addr.sin_addr.s_addr;
+    uint32_t ipv4 = client_addr.sin_addr.s_addr;
     int port = client_addr.sin_port;
 
     if (set_nonblocking(fd) < 0) {
