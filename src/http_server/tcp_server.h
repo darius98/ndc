@@ -12,14 +12,14 @@ struct tcp_conn {
     struct write_task* wt_head;
     struct write_task* wt_tail;
     void* user_data;
-    int ipv4;
+    int ipv4;  // TODO: Unsigned.
     int port;
     char buf[];
 };
 
-typedef int(*on_conn_open_cb)(void*, struct tcp_conn*);
-typedef int(*on_conn_recv_cb)(void*, struct tcp_conn*, int);
-typedef void(*on_conn_closed_cb)(void*, struct tcp_conn*);
+typedef int (*on_conn_open_cb)(void*, struct tcp_conn*);
+typedef int (*on_conn_recv_cb)(void*, struct tcp_conn*, int);
+typedef void (*on_conn_closed_cb)(void*, struct tcp_conn*);
 
 struct tcp_server {
     struct tcp_write_loop w_loop;

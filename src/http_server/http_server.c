@@ -9,8 +9,8 @@
 #include "tcp_server.h"
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
-    LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req_method(req), req_path(req), ipv4_str(req->conn->ipv4),
-              req->conn->port);
+    LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req_method(req), req_path(req), req_remote_ipv4_str(req),
+              req_remote_port(req));
     ff_pthread_mutex_lock(&server->lock);
     req->next = 0;
     if (server->tail != 0) {
@@ -48,12 +48,12 @@ static void* http_worker(void* arg) {
     struct http_server* server = (struct http_server*)arg;
     while (atomic_load_explicit(&server->stopped, memory_order_acquire) == 0) {
         struct http_req* req = http_server_pop_req(server);
-        LOG_DEBUG("Processing HTTP request %s %s from %s:%d", req_method(req), req_path(req), ipv4_str(req->conn->ipv4),
-                  req->conn->port);
+        LOG_DEBUG("Processing HTTP request %s %s from %s:%d", req_method(req), req_path(req), req_remote_ipv4_str(req),
+                  req_remote_port(req));
         for (int i = 0; i < server->handlers_len; i++) {
             if (server->handlers[i].should_handle(server->handlers[i].data, req)) {
                 LOG_DEBUG("Request %s %s from %s:%d processed by handler %s", req_method(req), req_path(req),
-                          ipv4_str(req->conn->ipv4), req->conn->port, server->handlers[i].name);
+                          req_remote_ipv4_str(req), req_remote_port(req), server->handlers[i].name);
                 server->handlers[i].handle(server->handlers[i].data, req);
                 break;
             }
@@ -71,6 +71,7 @@ static struct http_req* new_http_req(struct http_server* server, struct tcp_conn
         return 0;
     }
 
+    req->server = server;
     req->buf_len = 0;
     req->buf_cap = server->req_buf_cap;
     req->buf = malloc(req->buf_cap);
@@ -122,7 +123,7 @@ static int append_to_http_req(struct http_req* req, const char* start, const cha
     int len = end - start;
     if (len > req->buf_cap - req->buf_len) {
         LOG_ERROR("Received HTTP request larger than %d bytes from %s:%d, will close connection", req->buf_cap,
-                  ipv4_str(req->conn->ipv4), req->conn->port);
+                  req_remote_ipv4_str(req), req_remote_port(req));
         return -1;
     }
     char* dst = req->buf + req->buf_len;
@@ -249,7 +250,7 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn, int
     }
 }
 
-static int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn) {
+static int on_conn_open(void* cb_data, struct tcp_conn* conn) {
     struct http_req* req = new_http_req((struct http_server*)cb_data, conn);
     if (req == 0) {
         return -1;
@@ -258,21 +259,20 @@ static int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn) {
     return 0;
 }
 
-static int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn, int num_bytes) {
+static int on_conn_recv(void* cb_data, struct tcp_conn* conn, int num_bytes) {
     return read_http_reqs((struct http_server*)cb_data, conn, num_bytes);
 }
 
-static void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
+static void on_conn_close(void* cb_data, struct tcp_conn* conn) {
     if (conn->user_data != 0) {
-        complete_http_req((struct http_server*)cb_data, (struct http_req*)conn->user_data, 0, 0);
+        http_response_end(conn->user_data, 0, 0);
         conn->user_data = 0;
     }
 }
 
 void init_http_server(struct http_server* server, const struct conf* conf) {
-    init_tcp_server(&server->tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_loop, server,
-                    tcp_conn_after_open_callback, tcp_conn_on_recv_callback, tcp_conn_before_close_callback);
-
+    init_tcp_server(&server->tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_loop, server, on_conn_open,
+                    on_conn_recv, on_conn_close);
     server->head = 0;
     server->tail = 0;
     server->req_buf_cap = conf->http.request_buffer_size;
@@ -307,10 +307,19 @@ void install_http_handler(struct http_server* server, struct http_handler handle
     server->handlers[server->handlers_len++] = handler;
 }
 
-void complete_http_req(struct http_server* server, struct http_req* req, int status, int error) {
+void start_http_server(struct http_server* server) {
+    run_tcp_server_loop(&server->tcp_server);
+}
+
+void http_response_write(struct http_req* req, const char* buf, int buf_len, void* cb_data, write_task_cb cb) {
+    tcp_write_loop_push(&req->server->tcp_server.w_loop, req->conn, buf, buf_len, cb_data, cb);
+}
+
+void http_response_end(struct http_req* req, int status, int error) {
     if (error != 0) {
         LOG_ERROR("Failed to write %d response to request %s %s from connection %s:%d error=%d (%s)", status,
-                  req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port, error, errno_str(error));
+                  req_method(req), req_path(req), req_remote_ipv4_str(req), req_remote_port(req), error,
+                  errno_str(error));
     } else if (status != 0) {
         log_access(req, status);
     }
@@ -319,6 +328,7 @@ void complete_http_req(struct http_server* server, struct http_req* req, int sta
     free(req);
 }
 
-void start_http_server(struct http_server* server) {
-    run_tcp_server_loop(&server->tcp_server);
+void http_response_fail(struct http_req* req) {
+    close_tcp_conn(&req->server->tcp_server, req->conn);
+    http_response_end(req, 0, 0);
 }

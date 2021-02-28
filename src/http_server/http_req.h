@@ -1,9 +1,12 @@
 #ifndef NDC_HTTP_REQ_H_
 #define NDC_HTTP_REQ_H_
 
+struct http_server;
 struct tcp_conn;
 
 struct http_req {
+    struct http_server* server;
+
     /// The underlying TCP connection.
     struct tcp_conn* conn;
 
@@ -37,6 +40,12 @@ struct http_req {
     /// For the queue of http requests.
     struct http_req* next;
 };
+
+int req_remote_port(struct http_req* req);
+
+int req_remote_ipv4(struct http_req* req);
+
+const char* req_remote_ipv4_str(struct http_req* req);
 
 char* req_method(struct http_req* req);
 

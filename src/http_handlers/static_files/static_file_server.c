@@ -53,7 +53,7 @@ struct http_write_cb_data {
 
 static void http_404_write_cb(void* data, int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
-    complete_http_req(cb_data->server->http_server, cb_data->req, 404, err);
+    http_response_end(cb_data->req, 404, err);
     free(cb_data);
 }
 
@@ -61,15 +61,15 @@ static void http_200_response_headers_cb(void* data, int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
     if (err != 0) {
         LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
-                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(cb_data->req->conn->ipv4),
-                  cb_data->req->conn->port, err, errno_str(err));
+                  req_method(cb_data->req), req_path(cb_data->req), req_remote_ipv4_str(cb_data->req),
+                  req_remote_port(cb_data->req), err, errno_str(err));
     }
 }
 
 static void http_200_response_body_cb(void* data, int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
     close_file(cb_data->server->cache, cb_data->file);
-    complete_http_req(cb_data->server->http_server, cb_data->req, 200, err);
+    http_response_end(cb_data->req, 200, err);
     free(cb_data);
 }
 
@@ -77,19 +77,17 @@ void static_file_server_handle(void* data, struct http_req* req) {
     struct static_file_server* server = (struct static_file_server*)data;
     char* path = malloc(server->base_dir_len + strlen(req_path(req)) + 1);
     if (path == 0) {
-        LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
-                  req->conn->port, req_method(req), req_path(req));
-        close_tcp_conn(&server->http_server->tcp_server, req->conn);
-        complete_http_req(server->http_server, req, 0, 0);
+        LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", req_remote_ipv4_str(req),
+                  req_remote_port(req), req_method(req), req_path(req));
+        http_response_fail(req);
         return;
     }
 
     struct http_write_cb_data* cb_data = malloc(sizeof(struct http_write_cb_data));
     if (cb_data == 0) {
         LOG_ERROR("Failed to allocate callback data for writing response to request %s %s from connection %s:%d",
-                  req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port);
-        close_tcp_conn(&server->http_server->tcp_server, req->conn);
-        complete_http_req(server->http_server, req, 0, 0);
+                  req_method(req), req_path(req), req_remote_ipv4_str(req), req_remote_port(req));
+        http_response_fail(req);
         return;
     }
 
@@ -102,8 +100,7 @@ void static_file_server_handle(void* data, struct http_req* req) {
 
     struct mapped_file* file = open_file(server->cache, path);
     if (file == 0) {
-        tcp_write_loop_push(&server->http_server->tcp_server.w_loop, req->conn, http_404_response,
-                            http_404_response_len, cb_data, http_404_write_cb);
+        http_response_write(req, http_404_response, http_404_response_len, cb_data, http_404_write_cb);
         return;
     }
     cb_data->file = file;
@@ -126,15 +123,13 @@ void static_file_server_handle(void* data, struct http_req* req) {
                                      content_type_hdr_value, file->content_len);
     if (cb_data->res_hdrs_len < 0) {
         LOG_ERROR("Failed to format response headers of request %s %s from connection %s:%d: snprintf returned %d",
-                  req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port, cb_data->res_hdrs_len);
+                  req_method(req), req_path(req), req_remote_ipv4_str(req), req_remote_port(req),
+                  cb_data->res_hdrs_len);
         free(cb_data);
         close_file(server->cache, file);
-        close_tcp_conn(&server->http_server->tcp_server, req->conn);
-        complete_http_req(server->http_server, req, 0, 0);
+        http_response_fail(req);
         return;
     }
-    tcp_write_loop_push(&server->http_server->tcp_server.w_loop, req->conn, cb_data->res_hdrs, cb_data->res_hdrs_len,
-                        cb_data, http_200_response_headers_cb);
-    tcp_write_loop_push(&server->http_server->tcp_server.w_loop, req->conn, file->content, file->content_len, cb_data,
-                        http_200_response_body_cb);
+    http_response_write(req, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data, http_200_response_headers_cb);
+    http_response_write(req, file->content, file->content_len, cb_data, http_200_response_body_cb);
 }

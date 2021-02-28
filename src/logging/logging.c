@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <execinfo.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -12,7 +13,6 @@
 
 #include "../http_server/http_req.h"
 #include "../http_server/tcp_server.h"
-#include "../utils/ff_pthread.h"
 
 static struct {
     FILE* access_file;
@@ -175,7 +175,7 @@ void internal_log_fatal_message(const char* filename, int lineno, int level, con
 void log_access(struct http_req* req, int status) {
     if (logging.access_file != 0) {
         lock_logs();
-        fprintf(logging.access_file, "%s - - [", ipv4_str(req->conn->ipv4));
+        fprintf(logging.access_file, "%s - - [", req_remote_ipv4_str(req));
         log_time(logging.access_file);
         fprintf(logging.access_file, "] \"%s %s %s\" %d\n", req_method(req), req_path(req), req_version(req), status);
         unlock_logs();
