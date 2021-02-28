@@ -3,17 +3,16 @@
 
 #include "../conf/conf.h"
 #include "../utils/ff_pthread.h"
+#include "http_req.h"
 
 struct tcp_server;
 struct tcp_conn;
-
-typedef void (*write_task_cb)(void* cb_data, int err);
 
 struct write_task {
     int buf_crs;
     int buf_len;
     const char* buf;
-    void* cb_data;
+    void* data;
     write_task_cb cb;
     struct write_task* next;
 };
@@ -35,7 +34,7 @@ void tcp_write_loop_remove_conn(struct tcp_write_loop* w_loop, struct tcp_conn* 
 
 /// Note: It is the responsibility of the callback to log an appropriate message for errors.
 void tcp_write_loop_push(struct tcp_write_loop* w_loop, struct tcp_conn* conn, const char* buf, int buf_len,
-                         void* cb_data, write_task_cb cb);
+                         void* data, write_task_cb cb);
 
 void tcp_write_loop_process_writes(struct tcp_write_loop* w_loop, struct tcp_conn* conn);
 

@@ -17,7 +17,6 @@ struct tcp_conn {
     char buf[];
 };
 
-typedef int (*on_conn_open_cb)(void*, struct tcp_conn*);
 typedef int (*on_conn_recv_cb)(void*, struct tcp_conn*, int);
 typedef void (*on_conn_closed_cb)(void*, struct tcp_conn*);
 
@@ -29,16 +28,15 @@ struct tcp_server {
     int notify_pipe[2];
     int port;
     void* tls_ctx;
-    void* cb_data;
-    on_conn_open_cb on_conn_open;
+    void* data;
     on_conn_recv_cb on_conn_recv;
     on_conn_closed_cb on_conn_closed;
 };
 
 /// Initialize a TCP server. Note: Aborts on failure.
 void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
-                     const struct tcp_write_loop_conf* w_loop_conf, void* cb_data, on_conn_open_cb on_conn_open,
-                     on_conn_recv_cb on_conn_recv, on_conn_closed_cb on_conn_closed);
+                     const struct tcp_write_loop_conf* w_loop_conf, void* data, on_conn_recv_cb on_conn_recv,
+                     on_conn_closed_cb on_conn_closed);
 
 struct tcp_conn* accept_tcp_conn(struct tcp_server* server);
 

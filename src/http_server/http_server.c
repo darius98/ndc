@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "../logging/logging.h"
+#include "http_req.h"
 #include "tcp_server.h"
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
@@ -140,7 +141,15 @@ static char* find_next_clrf(char* s) {
     return strstr(s, "\r\n");
 }
 
-static int read_http_reqs(struct http_server* server, struct tcp_conn* conn, int num_bytes) {
+static int on_conn_recv(void* data, struct tcp_conn* conn, int num_bytes) {
+    if (conn->user_data == 0) {
+        struct http_req* req = new_http_req((struct http_server*)data, conn);
+        if (req == 0) {
+            return -1;
+        }
+        conn->user_data = req;
+    }
+    struct http_server* server = (struct http_server*)data;
     char* buf = conn->buf;
     char* const buf_end = conn->buf + num_bytes;
     while (1) {
@@ -250,20 +259,7 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn, int
     }
 }
 
-static int on_conn_open(void* cb_data, struct tcp_conn* conn) {
-    struct http_req* req = new_http_req((struct http_server*)cb_data, conn);
-    if (req == 0) {
-        return -1;
-    }
-    conn->user_data = req;
-    return 0;
-}
-
-static int on_conn_recv(void* cb_data, struct tcp_conn* conn, int num_bytes) {
-    return read_http_reqs((struct http_server*)cb_data, conn, num_bytes);
-}
-
-static void on_conn_close(void* cb_data, struct tcp_conn* conn) {
+static void on_conn_close(void* data, struct tcp_conn* conn) {
     if (conn->user_data != 0) {
         http_response_end(conn->user_data, 0, 0);
         conn->user_data = 0;
@@ -271,8 +267,8 @@ static void on_conn_close(void* cb_data, struct tcp_conn* conn) {
 }
 
 void init_http_server(struct http_server* server, const struct conf* conf) {
-    init_tcp_server(&server->tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_loop, server, on_conn_open,
-                    on_conn_recv, on_conn_close);
+    init_tcp_server(&server->tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_loop, server, on_conn_recv,
+                    on_conn_close);
     server->head = 0;
     server->tail = 0;
     server->req_buf_cap = conf->http.request_buffer_size;
@@ -309,25 +305,4 @@ void install_http_handler(struct http_server* server, struct http_handler handle
 
 void start_http_server(struct http_server* server) {
     run_tcp_server_loop(&server->tcp_server);
-}
-
-void http_response_write(struct http_req* req, const char* buf, int buf_len, void* cb_data, write_task_cb cb) {
-    tcp_write_loop_push(&req->server->tcp_server.w_loop, req->conn, buf, buf_len, cb_data, cb);
-}
-
-void http_response_end(struct http_req* req, int status, int error) {
-    if (error != 0) {
-        LOG_ERROR("Failed to write %d response to request %s %s from connection %s:%d error=%d (%s)", status,
-                  req_method(req), req_path(req), req_remote_ipv4(req), req_remote_port(req), error, errno_str(error));
-    } else if (status != 0) {
-        log_access(req, status);
-    }
-    tcp_conn_dec_refcount(req->conn);
-    free(req->buf);
-    free(req);
-}
-
-void http_response_fail(struct http_req* req) {
-    close_tcp_conn(&req->server->tcp_server, req->conn);
-    http_response_end(req, 0, 0);
 }

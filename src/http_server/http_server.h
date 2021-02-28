@@ -40,10 +40,4 @@ void install_http_handler(struct http_server* server, struct http_handler handle
 
 void start_http_server(struct http_server* server);
 
-void http_response_write(struct http_req* req, const char* buf, int buf_len, void* cb_data, write_task_cb cb);
-
-void http_response_end(struct http_req* req, int status, int error);
-
-void http_response_fail(struct http_req* req);
-
 #endif

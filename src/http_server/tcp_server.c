@@ -14,14 +14,13 @@
 #include "tls.h"
 
 void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
-                     const struct tcp_write_loop_conf* w_loop_conf, void* cb_data, on_conn_open_cb on_conn_open,
-                     on_conn_recv_cb on_conn_recv, on_conn_closed_cb on_conn_closed) {
+                     const struct tcp_write_loop_conf* w_loop_conf, void* data, on_conn_recv_cb on_conn_recv,
+                     on_conn_closed_cb on_conn_closed) {
     init_tcp_write_loop(&server->w_loop, w_loop_conf, server);
     server->tls_ctx = init_tls(conf->tls_cert_pem);
     server->conf = conf;
     server->port = port;
-    server->cb_data = cb_data;
-    server->on_conn_open = on_conn_open;
+    server->data = data;
     server->on_conn_recv = on_conn_recv;
     server->on_conn_closed = on_conn_closed;
 
@@ -88,13 +87,6 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     conn->port = port;
     atomic_store_explicit(&conn->is_closed, 0, memory_order_release);
     tcp_write_loop_add_conn(&server->w_loop, conn);
-    if (server->on_conn_open(server->cb_data, conn) < 0) {
-        tcp_write_loop_remove_conn(&server->w_loop, conn);
-        free_tls(conn->tls);
-        free(conn);
-        close_and_log(fd, ipv4, port);
-        return 0;
-    }
     LOG_DEBUG("TCP client connected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
     return conn;
 }
@@ -125,7 +117,7 @@ void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     }
     LOG_DEBUG("Received %d bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf[num_bytes] = 0;
-    if (server->on_conn_recv(server->cb_data, conn, num_bytes) < 0) {
+    if (server->on_conn_recv(server->data, conn, num_bytes) < 0) {
         close_tcp_conn_in_loop(server, conn);
     }
 }
@@ -137,7 +129,7 @@ struct tcp_server_notification {
 };
 
 void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* conn) {
-    server->on_conn_closed(server->cb_data, conn);
+    server->on_conn_closed(server->data, conn);
     tcp_write_loop_remove_conn(&server->w_loop, conn);
     remove_conn_from_read_loop(server, conn);
     LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);

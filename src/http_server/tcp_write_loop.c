@@ -17,7 +17,7 @@ static void pop_task(struct tcp_conn* conn, int err) {
         conn->wt_tail = 0;
     }
     task->next = 0;
-    task->cb(task->cb_data, err);
+    task->cb(task->data, err);
     free(task);
 }
 
@@ -28,7 +28,7 @@ static void clear_task_list(struct tcp_conn* conn) {
     conn->wt_tail = 0;
     while (task != 0) {
         struct write_task* next = task->next;
-        task->cb(task->cb_data, ECONNABORTED);
+        task->cb(task->data, ECONNABORTED);
         free(task);
         task = next;
     }
@@ -105,11 +105,11 @@ void tcp_write_loop_remove_conn(struct tcp_write_loop* w_loop, struct tcp_conn* 
 }
 
 void tcp_write_loop_push(struct tcp_write_loop* w_loop, struct tcp_conn* conn, const char* buf, int buf_len,
-                         void* cb_data, write_task_cb cb) {
+                         void* data, write_task_cb cb) {
     struct write_task* task = malloc(sizeof(struct write_task));
     if (task == 0) {
         LOG_ERROR("Failed to allocate write task for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
-        cb(cb_data, -1);
+        cb(data, -1);
         close_tcp_conn(w_loop->tcp_server, conn);
         return;
     }
@@ -117,7 +117,7 @@ void tcp_write_loop_push(struct tcp_write_loop* w_loop, struct tcp_conn* conn, c
     task->buf_crs = 0;
     task->buf_len = buf_len;
     task->buf = buf;
-    task->cb_data = cb_data;
+    task->data = data;
     task->cb = cb;
 
     struct write_worker_notification notification;
