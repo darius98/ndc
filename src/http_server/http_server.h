@@ -4,6 +4,7 @@
 #include "../conf/conf.h"
 #include "../utils/ff_pthread.h"
 #include "http_req.h"
+#include "tcp_server.h"
 
 struct http_handler {
     char* name;
@@ -13,6 +14,8 @@ struct http_handler {
 };
 
 struct http_server {
+    struct tcp_server tcp_server;
+
     struct http_req* head;
     struct http_req* tail;
 
@@ -31,10 +34,12 @@ struct http_server {
 };
 
 /// Initialize a http server. Note: Aborts on failure.
-void init_http_server(struct http_server* server, const struct http_conf* conf);
+void init_http_server(struct http_server* server, const struct conf* conf);
 
 void install_http_handler(struct http_server* server, struct http_handler handler);
 
 void complete_http_req(struct http_server* server, struct http_req* req, int status, int error);
+
+void start_http_server(struct http_server* server);
 
 #endif

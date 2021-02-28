@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include "../../http_server/http_server.h"
-#include "../../http_server/tcp_server.h"
 #include "../../logging/logging.h"
 #include "file_cache.h"
 
@@ -31,9 +30,8 @@ static struct known_extension known_extensions[NUM_KNOWN_EXTENSIONS] = {
     {.ext = ".xml", .ext_len = 4, .content_type = "text/xml"},
 };
 
-void init_static_file_server(struct static_file_server* server, struct file_cache* cache, struct tcp_server* tcp_server,
+void init_static_file_server(struct static_file_server* server, struct file_cache* cache,
                              struct http_server* http_server, const char* base_dir) {
-    server->tcp_server = tcp_server;
     server->http_server = http_server;
     server->cache = cache;
     server->base_dir_len = strlen(base_dir);
@@ -81,7 +79,7 @@ void static_file_server_handle(void* data, struct http_req* req) {
     if (path == 0) {
         LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
                   req->conn->port, req_method(req), req_path(req));
-        close_tcp_conn(server->tcp_server, req->conn);
+        close_tcp_conn(&server->http_server->tcp_server, req->conn);
         complete_http_req(server->http_server, req, 0, 0);
         return;
     }
@@ -90,7 +88,7 @@ void static_file_server_handle(void* data, struct http_req* req) {
     if (cb_data == 0) {
         LOG_ERROR("Failed to allocate callback data for writing response to request %s %s from connection %s:%d",
                   req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port);
-        close_tcp_conn(server->tcp_server, req->conn);
+        close_tcp_conn(&server->http_server->tcp_server, req->conn);
         complete_http_req(server->http_server, req, 0, 0);
         return;
     }
@@ -104,8 +102,8 @@ void static_file_server_handle(void* data, struct http_req* req) {
 
     struct mapped_file* file = open_file(server->cache, path);
     if (file == 0) {
-        tcp_write_loop_push(&server->tcp_server->w_loop, req->conn, http_404_response, http_404_response_len, cb_data,
-                            http_404_write_cb);
+        tcp_write_loop_push(&server->http_server->tcp_server.w_loop, req->conn, http_404_response,
+                            http_404_response_len, cb_data, http_404_write_cb);
         return;
     }
     cb_data->file = file;
@@ -131,12 +129,12 @@ void static_file_server_handle(void* data, struct http_req* req) {
                   req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port, cb_data->res_hdrs_len);
         free(cb_data);
         close_file(server->cache, file);
-        close_tcp_conn(server->tcp_server, req->conn);
+        close_tcp_conn(&server->http_server->tcp_server, req->conn);
         complete_http_req(server->http_server, req, 0, 0);
         return;
     }
-    tcp_write_loop_push(&server->tcp_server->w_loop, req->conn, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data,
-                        http_200_response_headers_cb);
-    tcp_write_loop_push(&server->tcp_server->w_loop, req->conn, file->content, file->content_len, cb_data,
+    tcp_write_loop_push(&server->http_server->tcp_server.w_loop, req->conn, cb_data->res_hdrs, cb_data->res_hdrs_len,
+                        cb_data, http_200_response_headers_cb);
+    tcp_write_loop_push(&server->http_server->tcp_server.w_loop, req->conn, file->content, file->content_len, cb_data,
                         http_200_response_body_cb);
 }

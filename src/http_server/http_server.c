@@ -62,53 +62,6 @@ static void* http_worker(void* arg) {
     return 0;
 }
 
-void init_http_server(struct http_server* server, const struct http_conf* conf) {
-    server->head = 0;
-    server->tail = 0;
-    server->req_buf_cap = conf->request_buffer_size;
-    ff_pthread_mutex_init(&server->lock, 0);
-    ff_pthread_cond_init(&server->cond_var, 0);
-    atomic_store_explicit(&server->stopped, 0, memory_order_release);
-    server->handlers_len = 0;
-    server->handlers_cap = 4;
-    server->handlers = malloc(4 * sizeof(struct http_handler));
-    if (server->handlers == 0) {
-        LOG_FATAL("Failed to allocate memory for initial HTTP handlers array.");
-    }
-    server->num_workers = conf->num_workers;
-    server->workers = malloc(conf->num_workers * sizeof(pthread_t));
-    if (server->workers == 0) {
-        LOG_FATAL("Failed to allocate memory for HTTP worker threads array.");
-    }
-    for (int i = 0; i < conf->num_workers; i++) {
-        ff_pthread_create(&server->workers[i], 0, http_worker, server);
-    }
-}
-
-void install_http_handler(struct http_server* server, struct http_handler handler) {
-    if (server->handlers_len == server->handlers_cap) {
-        void* resized = realloc(server->handlers, sizeof(struct http_handler) * server->handlers_cap * 2);
-        if (resized == 0) {
-            LOG_FATAL("Failed to grow HTTP handlers array");
-        }
-        server->handlers = resized;
-        server->handlers_cap *= 2;
-    }
-    server->handlers[server->handlers_len++] = handler;
-}
-
-void complete_http_req(struct http_server* server, struct http_req* req, int status, int error) {
-    if (error != 0) {
-        LOG_ERROR("Failed to write %d response to request %s %s from connection %s:%d error=%d (%s)", status,
-                  req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port, error, errno_str(error));
-    } else if (status != 0) {
-        log_access(req, status);
-    }
-    tcp_conn_dec_refcount(req->conn);
-    free(req->buf);
-    free(req);
-}
-
 static struct http_req* new_http_req(struct http_server* server, struct tcp_conn* conn) {
     int ipv4 = conn->ipv4;
     int port = conn->port;
@@ -296,7 +249,7 @@ static int read_http_reqs(struct http_server* server, struct tcp_conn* conn, int
     }
 }
 
-int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn) {
+static int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn) {
     struct http_req* req = new_http_req((struct http_server*)cb_data, conn);
     if (req == 0) {
         return -1;
@@ -305,13 +258,67 @@ int tcp_conn_after_open_callback(void* cb_data, struct tcp_conn* conn) {
     return 0;
 }
 
-int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn, int num_bytes) {
+static int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn, int num_bytes) {
     return read_http_reqs((struct http_server*)cb_data, conn, num_bytes);
 }
 
-void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
+static void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
     if (conn->user_data != 0) {
         complete_http_req((struct http_server*)cb_data, (struct http_req*)conn->user_data, 0, 0);
         conn->user_data = 0;
     }
+}
+
+void init_http_server(struct http_server* server, const struct conf* conf) {
+    init_tcp_server(&server->tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_loop, server,
+                    tcp_conn_after_open_callback, tcp_conn_on_recv_callback, tcp_conn_before_close_callback);
+
+    server->head = 0;
+    server->tail = 0;
+    server->req_buf_cap = conf->http.request_buffer_size;
+    ff_pthread_mutex_init(&server->lock, 0);
+    ff_pthread_cond_init(&server->cond_var, 0);
+    atomic_store_explicit(&server->stopped, 0, memory_order_release);
+    server->handlers_len = 0;
+    server->handlers_cap = 4;
+    server->handlers = malloc(4 * sizeof(struct http_handler));
+    if (server->handlers == 0) {
+        LOG_FATAL("Failed to allocate memory for initial HTTP handlers array.");
+    }
+    server->num_workers = conf->http.num_workers;
+    server->workers = malloc(conf->http.num_workers * sizeof(pthread_t));
+    if (server->workers == 0) {
+        LOG_FATAL("Failed to allocate memory for HTTP worker threads array.");
+    }
+    for (int i = 0; i < conf->http.num_workers; i++) {
+        ff_pthread_create(&server->workers[i], 0, http_worker, server);
+    }
+}
+
+void install_http_handler(struct http_server* server, struct http_handler handler) {
+    if (server->handlers_len == server->handlers_cap) {
+        void* resized = realloc(server->handlers, sizeof(struct http_handler) * server->handlers_cap * 2);
+        if (resized == 0) {
+            LOG_FATAL("Failed to grow HTTP handlers array");
+        }
+        server->handlers = resized;
+        server->handlers_cap *= 2;
+    }
+    server->handlers[server->handlers_len++] = handler;
+}
+
+void complete_http_req(struct http_server* server, struct http_req* req, int status, int error) {
+    if (error != 0) {
+        LOG_ERROR("Failed to write %d response to request %s %s from connection %s:%d error=%d (%s)", status,
+                  req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port, error, errno_str(error));
+    } else if (status != 0) {
+        log_access(req, status);
+    }
+    tcp_conn_dec_refcount(req->conn);
+    free(req->buf);
+    free(req);
+}
+
+void start_http_server(struct http_server* server) {
+    run_tcp_server_loop(&server->tcp_server);
 }
