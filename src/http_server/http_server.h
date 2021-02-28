@@ -35,6 +35,6 @@ void init_http_server(struct http_server* server, const struct http_conf* conf);
 
 void install_http_handler(struct http_server* server, struct http_handler handler);
 
-void delete_http_req(struct http_server* server, struct http_req* req);
+void complete_http_req(struct http_server* server, struct http_req* req, int status, int error);
 
 #endif

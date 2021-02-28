@@ -10,7 +10,6 @@ int always_should_handle(void* data, struct http_req* req) {
 }
 
 void run_ndc_application_sync(const struct conf* conf) {
-
     struct tcp_server tcp_server;
     init_tcp_server(&tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_loop);
 

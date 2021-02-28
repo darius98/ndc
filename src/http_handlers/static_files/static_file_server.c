@@ -53,39 +53,25 @@ struct http_write_cb_data {
     char res_hdrs[200];
 };
 
-static void http_404_write_cb(void* data, struct tcp_conn* conn, int err) {
+static void http_404_write_cb(void* data, int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
-    if (err != 0) {
-        LOG_ERROR("Failed to write 404 Not found response to request %s %s from connection %s:%d errno=%d (%s)",
-                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(conn->ipv4), conn->port, err,
-                  errno_str(err));
-    } else {
-        log_access(cb_data->req, 404);
-    }
-    delete_http_req(cb_data->server->http_server, cb_data->req);
+    complete_http_req(cb_data->server->http_server, cb_data->req, 404, err);
     free(cb_data);
 }
 
-static void http_200_response_headers_cb(void* data, struct tcp_conn* conn, int err) {
+static void http_200_response_headers_cb(void* data, int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
     if (err != 0) {
         LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
-                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(conn->ipv4), conn->port, err,
-                  errno_str(err));
+                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(cb_data->req->conn->ipv4),
+                  cb_data->req->conn->port, err, errno_str(err));
     }
 }
 
-static void http_200_response_body_cb(void* data, struct tcp_conn* conn, int err) {
+static void http_200_response_body_cb(void* data, int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
-    if (err != 0) {
-        LOG_ERROR("Failed to write file response to request %s %s from connection %s:%d errno=%d (%s)",
-                  req_method(cb_data->req), req_path(cb_data->req), ipv4_str(conn->ipv4), conn->port, err,
-                  errno_str(err));
-    } else {
-        log_access(cb_data->req, 200);
-    }
     close_file(cb_data->server->cache, cb_data->file);
-    delete_http_req(cb_data->server->http_server, cb_data->req);
+    complete_http_req(cb_data->server->http_server, cb_data->req, 200, err);
     free(cb_data);
 }
 
@@ -96,7 +82,7 @@ void static_file_server_handle(void* data, struct http_req* req) {
         LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", ipv4_str(req->conn->ipv4),
                   req->conn->port, req_method(req), req_path(req));
         close_tcp_conn(server->tcp_server, req->conn);
-        delete_http_req(server->http_server, req);
+        complete_http_req(server->http_server, req, 0, 0);
         return;
     }
 
@@ -105,7 +91,7 @@ void static_file_server_handle(void* data, struct http_req* req) {
         LOG_ERROR("Failed to allocate callback data for writing response to request %s %s from connection %s:%d",
                   req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port);
         close_tcp_conn(server->tcp_server, req->conn);
-        delete_http_req(server->http_server, req);
+        complete_http_req(server->http_server, req, 0, 0);
         return;
     }
 
@@ -119,7 +105,7 @@ void static_file_server_handle(void* data, struct http_req* req) {
     struct mapped_file* file = open_file(server->cache, path);
     if (file == 0) {
         tcp_write_loop_push(&server->tcp_server->w_loop, req->conn, http_404_response, http_404_response_len, cb_data,
-                         http_404_write_cb);
+                            http_404_write_cb);
         return;
     }
     cb_data->file = file;
@@ -146,11 +132,11 @@ void static_file_server_handle(void* data, struct http_req* req) {
         free(cb_data);
         close_file(server->cache, file);
         close_tcp_conn(server->tcp_server, req->conn);
-        delete_http_req(server->http_server, req);
+        complete_http_req(server->http_server, req, 0, 0);
         return;
     }
     tcp_write_loop_push(&server->tcp_server->w_loop, req->conn, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data,
-                     http_200_response_headers_cb);
+                        http_200_response_headers_cb);
     tcp_write_loop_push(&server->tcp_server->w_loop, req->conn, file->content, file->content_len, cb_data,
-                     http_200_response_body_cb);
+                        http_200_response_body_cb);
 }

@@ -7,7 +7,8 @@ void* new_tls_for_conn(void* tls_ctx, int fd);
 
 void free_tls(void* tls);
 
-enum recv_tls_result {
+enum recv_tls_result
+{
     recv_tls_ok,
     recv_tls_eof,
     recv_tls_error,

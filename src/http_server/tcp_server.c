@@ -32,8 +32,8 @@ void init_tcp_server(struct tcp_server* server, int port, const struct tcp_serve
 
 static void close_and_log(int fd, int ipv4, int port) {
     if (close(fd) < 0) {
-        LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4),
-                  port, errno, errno_str(errno));
+        LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4), port,
+                  errno, errno_str(errno));
     }
 }
 

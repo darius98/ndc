@@ -7,7 +7,7 @@
 struct tcp_server;
 struct tcp_conn;
 
-typedef void (*write_task_cb)(void* cb_data, struct tcp_conn* conn, int err);
+typedef void (*write_task_cb)(void* cb_data, int err);
 
 struct write_task {
     int buf_crs;

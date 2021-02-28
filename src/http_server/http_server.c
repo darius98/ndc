@@ -97,7 +97,13 @@ void install_http_handler(struct http_server* server, struct http_handler handle
     server->handlers[server->handlers_len++] = handler;
 }
 
-void delete_http_req(struct http_server* server, struct http_req* req) {
+void complete_http_req(struct http_server* server, struct http_req* req, int status, int error) {
+    if (error != 0) {
+        LOG_ERROR("Failed to write %d response to request %s %s from connection %s:%d error=%d (%s)", status,
+                  req_method(req), req_path(req), ipv4_str(req->conn->ipv4), req->conn->port, error, errno_str(error));
+    } else if (status != 0) {
+        log_access(req, status);
+    }
     tcp_conn_dec_refcount(req->conn);
     free(req->buf);
     free(req);
@@ -305,7 +311,7 @@ int tcp_conn_on_recv_callback(void* cb_data, struct tcp_conn* conn, int num_byte
 
 void tcp_conn_before_close_callback(void* cb_data, struct tcp_conn* conn) {
     if (conn->user_data != 0) {
-        delete_http_req((struct http_server*)cb_data, (struct http_req*)conn->user_data);
+        complete_http_req((struct http_server*)cb_data, (struct http_req*)conn->user_data, 0, 0);
         conn->user_data = 0;
     }
 }
