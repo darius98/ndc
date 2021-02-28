@@ -1,5 +1,5 @@
-#ifndef NDC_TCP_SERVER_H_
-#define NDC_TCP_SERVER_H_
+#ifndef NDC_HTTP_SERVER_TCP_SERVER_H_
+#define NDC_HTTP_SERVER_TCP_SERVER_H_
 
 #include "../conf/conf.h"
 #include "tcp_write_loop.h"

@@ -7,12 +7,8 @@ int req_remote_port(struct http_req* req) {
     return req->conn->port;
 }
 
-int req_remote_ipv4(struct http_req* req) {
-    return req->conn->ipv4;
-}
-
-const char* req_remote_ipv4_str(struct http_req* req) {
-    return ipv4_str(req_remote_ipv4(req));
+const char* req_remote_ipv4(struct http_req* req) {
+    return ipv4_str(req->conn->ipv4);
 }
 
 char* req_method(struct http_req* req) {

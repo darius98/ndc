@@ -1,5 +1,5 @@
-#ifndef NDC_WRITE_SERVER_H_
-#define NDC_WRITE_SERVER_H_
+#ifndef NDC_HTTP_SERVER_TCP_WRITE_LOOP_H_
+#define NDC_HTTP_SERVER_TCP_WRITE_LOOP_H_
 
 #include "../conf/conf.h"
 #include "../utils/ff_pthread.h"

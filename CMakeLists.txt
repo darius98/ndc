@@ -21,7 +21,7 @@ set(ndc_sources
         src/logging/logging.c
         src/main.c
         src/http_server/tls.c
-        src/http_handlers/static_files/static_file_server.c
+        src/http_handlers/static_files/static_files_handler.c
         src/http_server/tcp_server.c
         src/http_server/tcp_write_loop.c)
 if (USE_KQUEUE)

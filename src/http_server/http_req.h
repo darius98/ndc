@@ -1,5 +1,5 @@
-#ifndef NDC_HTTP_REQ_H_
-#define NDC_HTTP_REQ_H_
+#ifndef NDC_HTTP_SERVER_HTTP_REQ_H_
+#define NDC_HTTP_SERVER_HTTP_REQ_H_
 
 struct http_server;
 struct tcp_conn;
@@ -43,9 +43,7 @@ struct http_req {
 
 int req_remote_port(struct http_req* req);
 
-int req_remote_ipv4(struct http_req* req);
-
-const char* req_remote_ipv4_str(struct http_req* req);
+const char* req_remote_ipv4(struct http_req* req);
 
 char* req_method(struct http_req* req);
 

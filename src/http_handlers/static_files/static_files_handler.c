@@ -1,4 +1,4 @@
-#include "static_file_server.h"
+#include "static_files_handler.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,9 +30,7 @@ static struct known_extension known_extensions[NUM_KNOWN_EXTENSIONS] = {
     {.ext = ".xml", .ext_len = 4, .content_type = "text/xml"},
 };
 
-void init_static_file_server(struct static_file_server* server, struct file_cache* cache,
-                             struct http_server* http_server, const char* base_dir) {
-    server->http_server = http_server;
+void init_static_file_server(struct static_files_handler* server, struct file_cache* cache, const char* base_dir) {
     server->cache = cache;
     server->base_dir_len = strlen(base_dir);
     server->base_dir = malloc(server->base_dir_len + 1);
@@ -44,7 +42,7 @@ void init_static_file_server(struct static_file_server* server, struct file_cach
 
 struct http_write_cb_data {
     struct http_req* req;
-    struct static_file_server* server;
+    struct static_files_handler* server;
     struct mapped_file* file;
 
     int res_hdrs_len;
@@ -61,7 +59,7 @@ static void http_200_response_headers_cb(void* data, int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
     if (err != 0) {
         LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
-                  req_method(cb_data->req), req_path(cb_data->req), req_remote_ipv4_str(cb_data->req),
+                  req_method(cb_data->req), req_path(cb_data->req), req_remote_ipv4(cb_data->req),
                   req_remote_port(cb_data->req), err, errno_str(err));
     }
 }
@@ -74,10 +72,10 @@ static void http_200_response_body_cb(void* data, int err) {
 }
 
 void static_file_server_handle(void* data, struct http_req* req) {
-    struct static_file_server* server = (struct static_file_server*)data;
+    struct static_files_handler* server = (struct static_files_handler*)data;
     char* path = malloc(server->base_dir_len + strlen(req_path(req)) + 1);
     if (path == 0) {
-        LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", req_remote_ipv4_str(req),
+        LOG_ERROR("Failed to allocate memory while responding to HTTP request %s:%d %s %s", req_remote_ipv4(req),
                   req_remote_port(req), req_method(req), req_path(req));
         http_response_fail(req);
         return;
@@ -86,7 +84,7 @@ void static_file_server_handle(void* data, struct http_req* req) {
     struct http_write_cb_data* cb_data = malloc(sizeof(struct http_write_cb_data));
     if (cb_data == 0) {
         LOG_ERROR("Failed to allocate callback data for writing response to request %s %s from connection %s:%d",
-                  req_method(req), req_path(req), req_remote_ipv4_str(req), req_remote_port(req));
+                  req_method(req), req_path(req), req_remote_ipv4(req), req_remote_port(req));
         http_response_fail(req);
         return;
     }
@@ -123,8 +121,7 @@ void static_file_server_handle(void* data, struct http_req* req) {
                                      content_type_hdr_value, file->content_len);
     if (cb_data->res_hdrs_len < 0) {
         LOG_ERROR("Failed to format response headers of request %s %s from connection %s:%d: snprintf returned %d",
-                  req_method(req), req_path(req), req_remote_ipv4_str(req), req_remote_port(req),
-                  cb_data->res_hdrs_len);
+                  req_method(req), req_path(req), req_remote_ipv4(req), req_remote_port(req), cb_data->res_hdrs_len);
         free(cb_data);
         close_file(server->cache, file);
         http_response_fail(req);

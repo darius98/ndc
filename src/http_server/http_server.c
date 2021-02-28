@@ -9,7 +9,7 @@
 #include "tcp_server.h"
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
-    LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req_method(req), req_path(req), req_remote_ipv4_str(req),
+    LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req_method(req), req_path(req), req_remote_ipv4(req),
               req_remote_port(req));
     ff_pthread_mutex_lock(&server->lock);
     req->next = 0;
@@ -48,12 +48,12 @@ static void* http_worker(void* arg) {
     struct http_server* server = (struct http_server*)arg;
     while (atomic_load_explicit(&server->stopped, memory_order_acquire) == 0) {
         struct http_req* req = http_server_pop_req(server);
-        LOG_DEBUG("Processing HTTP request %s %s from %s:%d", req_method(req), req_path(req), req_remote_ipv4_str(req),
+        LOG_DEBUG("Processing HTTP request %s %s from %s:%d", req_method(req), req_path(req), req_remote_ipv4(req),
                   req_remote_port(req));
         for (int i = 0; i < server->handlers_len; i++) {
             if (server->handlers[i].should_handle(server->handlers[i].data, req)) {
                 LOG_DEBUG("Request %s %s from %s:%d processed by handler %s", req_method(req), req_path(req),
-                          req_remote_ipv4_str(req), req_remote_port(req), server->handlers[i].name);
+                          req_remote_ipv4(req), req_remote_port(req), server->handlers[i].name);
                 server->handlers[i].handle(server->handlers[i].data, req);
                 break;
             }
@@ -123,7 +123,7 @@ static int append_to_http_req(struct http_req* req, const char* start, const cha
     int len = end - start;
     if (len > req->buf_cap - req->buf_len) {
         LOG_ERROR("Received HTTP request larger than %d bytes from %s:%d, will close connection", req->buf_cap,
-                  req_remote_ipv4_str(req), req_remote_port(req));
+                  req_remote_ipv4(req), req_remote_port(req));
         return -1;
     }
     char* dst = req->buf + req->buf_len;
@@ -318,8 +318,7 @@ void http_response_write(struct http_req* req, const char* buf, int buf_len, voi
 void http_response_end(struct http_req* req, int status, int error) {
     if (error != 0) {
         LOG_ERROR("Failed to write %d response to request %s %s from connection %s:%d error=%d (%s)", status,
-                  req_method(req), req_path(req), req_remote_ipv4_str(req), req_remote_port(req), error,
-                  errno_str(error));
+                  req_method(req), req_path(req), req_remote_ipv4(req), req_remote_port(req), error, errno_str(error));
     } else if (status != 0) {
         log_access(req, status);
     }

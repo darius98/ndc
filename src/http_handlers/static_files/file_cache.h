@@ -1,5 +1,5 @@
-#ifndef NDC_FILE_CACHE_H_
-#define NDC_FILE_CACHE_H_
+#ifndef NDC_HTTP_HANDLERS_STATIC_FILES_FILE_CACHE_H_
+#define NDC_HTTP_HANDLERS_STATIC_FILES_FILE_CACHE_H_
 
 #include "../../conf/conf.h"
 #include "../../utils/ff_pthread.h"

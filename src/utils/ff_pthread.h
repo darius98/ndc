@@ -1,5 +1,5 @@
-#ifndef NDC_FF_PTHREAD_H_
-#define NDC_FF_PTHREAD_H_
+#ifndef NDC_UTILS_FF_PTHREAD_H_
+#define NDC_UTILS_FF_PTHREAD_H_
 
 #include <pthread.h>
 

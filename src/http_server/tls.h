@@ -1,5 +1,5 @@
-#ifndef NDC_TLS_H_
-#define NDC_TLS_H_
+#ifndef NDC_HTTP_SERVER_TLS_H_
+#define NDC_HTTP_SERVER_TLS_H_
 
 void* init_tls(char* cert_pem_file);
 

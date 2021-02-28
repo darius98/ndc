@@ -1,5 +1,5 @@
-#ifndef NDC_LOGGING_H_
-#define NDC_LOGGING_H_
+#ifndef NDC_LOGGING_LOGGING_H_
+#define NDC_LOGGING_LOGGING_H_
 
 #include "../conf/conf.h"
 

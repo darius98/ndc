@@ -1,5 +1,5 @@
-#ifndef NDC_CONF_H_
-#define NDC_CONF_H_
+#ifndef NDC_CONF_CONF_H_
+#define NDC_CONF_CONF_H_
 
 #define NDC_CONF_FILE_ENV_VAR "NDC_CONF_FILE"
 
