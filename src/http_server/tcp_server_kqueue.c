@@ -54,7 +54,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                     if (kevent(kqueue_fd, &event, 1, 0, 0, 0) < 0) {
                         LOG_ERROR("Could not accept TCP connection from %s:%d (fd=%d), kevent() failed errno=%d (%s)",
                                   ipv4_str(conn->ipv4), conn->port, conn->fd, errno, errno_str(errno));
-                        close_tcp_conn_in_loop(server, conn);
+                        close_tcp_conn_in_loop(conn);
                     }
                 }
             } else if (event_fd == server->notify_pipe[0]) {
@@ -62,11 +62,11 @@ void run_tcp_server_loop(struct tcp_server *server) {
             } else {
                 struct tcp_conn *conn = (struct tcp_conn *)events[i].udata;
                 if (events[i].flags & EV_EOF) {
-                    close_tcp_conn_in_loop(server, conn);
+                    close_tcp_conn_in_loop(conn);
                 } else if (events[i].filter & EVFILT_READ) {
                     LOG_DEBUG("Received read kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
                               conn->fd);
-                    recv_from_tcp_conn(server, conn);
+                    recv_from_tcp_conn(conn);
                 } else {
                     LOG_ERROR("Received unexpected event from kevent() fd=%d, event.flags=%d, event.filter=%u",
                               event_fd, events[i].flags, events[i].filter);
@@ -82,10 +82,10 @@ void run_tcp_server_loop(struct tcp_server *server) {
     }
 }
 
-void remove_conn_from_read_loop(struct tcp_server *server, struct tcp_conn *conn) {
+void remove_conn_from_read_loop(struct tcp_conn *conn) {
     struct kevent event;
     EV_SET(&event, conn->fd, EVFILT_READ, EV_DELETE, 0, 0, conn);
-    if (kevent(server->loop_fd, &event, 1, 0, 0, 0) < 0) {
+    if (kevent(conn->server->loop_fd, &event, 1, 0, 0, 0) < 0) {
         LOG_ERROR("Could not remove TCP connection %s:%d (fd=%d) from read loop, kevent() failed errno=%d (%s)",
                   ipv4_str(conn->ipv4), conn->port, conn->fd, errno, errno_str(errno));
     } else {

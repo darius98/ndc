@@ -43,7 +43,7 @@ void run_write_loop(struct tcp_write_loop* w_loop) {
             if (event_fd == w_loop->loop_notify_pipe[0]) {
                 should_process_notification = 1;
             } else {
-                tcp_write_loop_process_writes(w_loop, events[i].udata);
+                tcp_write_loop_process_writes(events[i].udata);
             }
         }
         if (should_process_notification) {
@@ -52,20 +52,20 @@ void run_write_loop(struct tcp_write_loop* w_loop) {
     }
 }
 
-int write_loop_add_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn) {
+int write_loop_add_conn(struct tcp_conn* conn) {
     struct kevent ev;
     EV_SET(&ev, conn->fd, EVFILT_WRITE, EV_ADD, 0, 0, conn);
-    if (kevent(w_loop->loop_fd, &ev, 1, 0, 0, 0) < 0) {
+    if (kevent(conn->server->w_loop.loop_fd, &ev, 1, 0, 0, 0) < 0) {
         LOG_ERROR("kevent() failed errno=%d (%s)", errno, errno_str(errno));
         return -1;
     }
     return 0;
 }
 
-void write_loop_remove_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn) {
+void write_loop_remove_conn(struct tcp_conn* conn) {
     struct kevent ev;
     EV_SET(&ev, conn->fd, EVFILT_WRITE, EV_DELETE, 0, 0, conn);
-    if (kevent(w_loop->loop_fd, &ev, 1, 0, 0, 0) < 0) {
+    if (kevent(conn->server->w_loop.loop_fd, &ev, 1, 0, 0, 0) < 0) {
         LOG_ERROR("kevent() failed errno=%d (%s)", errno, errno_str(errno));
     }
 }

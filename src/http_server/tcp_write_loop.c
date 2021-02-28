@@ -34,30 +34,13 @@ static void clear_task_list(struct tcp_conn* conn) {
     }
 }
 
-static void add_tcp_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn) {
-    if (write_loop_add_conn(w_loop, conn) < 0) {
-        tcp_conn_dec_refcount(conn);
-        return;
-    }
-    conn->wt_head = 0;
-    conn->wt_tail = 0;
-}
-
-static void remove_tcp_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn) {
-    clear_task_list(conn);
-    write_loop_remove_conn(w_loop, conn);
-    tcp_conn_dec_refcount(conn);
-}
-
 static void* tcp_write_loop_worker(void* arg) {
     struct tcp_write_loop* w_loop = (struct tcp_write_loop*)arg;
     run_write_loop(w_loop);
     return 0;
 }
 
-void init_tcp_write_loop(struct tcp_write_loop* w_loop, const struct tcp_write_loop_conf* conf,
-                         struct tcp_server* tcp_server) {
-    w_loop->tcp_server = tcp_server;
+void init_tcp_write_loop(struct tcp_write_loop* w_loop, const struct tcp_write_loop_conf* conf) {
     w_loop->loop_max_events = conf->events_batch_size;
     if (make_nonblocking_pipe(w_loop->loop_notify_pipe) < 0) {
         LOG_FATAL("Failed to create notify pipe for TCP write loop");
@@ -104,13 +87,12 @@ void tcp_write_loop_remove_conn(struct tcp_write_loop* w_loop, struct tcp_conn* 
     write_notification(w_loop, notification);
 }
 
-void tcp_write_loop_push(struct tcp_write_loop* w_loop, struct tcp_conn* conn, const char* buf, int buf_len,
-                         void* data, write_task_cb cb) {
+void tcp_write_loop_push(struct tcp_conn* conn, const char* buf, int buf_len, void* data, write_task_cb cb) {
     struct write_task* task = malloc(sizeof(struct write_task));
     if (task == 0) {
         LOG_ERROR("Failed to allocate write task for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
         cb(data, -1);
-        close_tcp_conn(w_loop->tcp_server, conn);
+        close_tcp_conn(conn);
         return;
     }
 
@@ -124,7 +106,7 @@ void tcp_write_loop_push(struct tcp_write_loop* w_loop, struct tcp_conn* conn, c
     notification.conn = conn;
     notification.task = task;
     notification.type = ww_notify_execute;
-    write_notification(w_loop, notification);
+    write_notification(&conn->server->w_loop, notification);
     tcp_conn_inc_refcount(conn);  // To make sure the connection stays alive until push_task is executed.
 }
 
@@ -141,7 +123,7 @@ static int push_task(struct tcp_conn* conn, struct write_task* task) {
     return 0;
 }
 
-void tcp_write_loop_process_writes(struct tcp_write_loop* w_loop, struct tcp_conn* conn) {
+void tcp_write_loop_process_writes(struct tcp_conn* conn) {
     struct write_task* task = conn->wt_head;
     while (task != 0) {
         ssize_t chunk_sz;
@@ -149,14 +131,14 @@ void tcp_write_loop_process_writes(struct tcp_write_loop* w_loop, struct tcp_con
             chunk_sz = write(conn->fd, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
             if (chunk_sz < 0 && errno != EWOULDBLOCK) {
                 pop_task(conn, errno);
-                close_tcp_conn(w_loop->tcp_server, conn);
+                close_tcp_conn(conn);
                 break;
             }
         } else {
             chunk_sz = write_tls(conn->tls, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
             if (chunk_sz < 0) {
                 pop_task(conn, errno);
-                close_tcp_conn(w_loop->tcp_server, conn);
+                close_tcp_conn(conn);
                 break;
             }
         }
@@ -181,11 +163,18 @@ void tcp_write_loop_process_notification(struct tcp_write_loop* w_loop) {
     }
     if (notification.type == ww_notify_execute) {
         if (push_task(notification.conn, notification.task) == 0) {
-            tcp_write_loop_process_writes(w_loop, notification.conn);
+            tcp_write_loop_process_writes(notification.conn);
         }
     } else if (notification.type == ww_notify_remove) {
-        remove_tcp_conn(w_loop, notification.conn);
+        clear_task_list(notification.conn);
+        write_loop_remove_conn(notification.conn);
+        tcp_conn_dec_refcount(notification.conn);
     } else if (notification.type == ww_notify_add) {
-        add_tcp_conn(w_loop, notification.conn);
+        if (write_loop_add_conn(notification.conn) < 0) {
+            tcp_conn_dec_refcount(notification.conn);
+            return;
+        }
+        notification.conn->wt_head = 0;
+        notification.conn->wt_tail = 0;
     }
 }

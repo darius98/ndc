@@ -61,7 +61,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                         LOG_ERROR(
                             "Could not accept TCP connection from %s:%d (fd=%d), epoll_ctl() failed errno=%d (%s)",
                             ipv4_str(conn->ipv4), conn->port, conn->fd, errno, errno_str(errno));
-                        close_tcp_conn_in_loop(server, conn);
+                        close_tcp_conn_in_loop(conn);
                     }
                 }
             } else if (events[i].data.ptr == &server->notify_pipe[0]) {
@@ -70,7 +70,7 @@ void run_tcp_server_loop(struct tcp_server *server) {
                 conn = (struct tcp_conn *)events[i].data.ptr;
                 LOG_DEBUG("Received epoll event on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port,
                           conn->fd);
-                recv_from_tcp_conn(server, conn);
+                recv_from_tcp_conn(conn);
             }
         }
         if (should_process_notification) {
@@ -79,11 +79,11 @@ void run_tcp_server_loop(struct tcp_server *server) {
     }
 }
 
-void remove_conn_from_read_loop(struct tcp_server *server, struct tcp_conn *conn) {
+void remove_conn_from_read_loop(struct tcp_conn *conn) {
     struct epoll_event event;
     event.events = EPOLLIN;  // TODO: | EPOLLET;
     event.data.ptr = conn;
-    if (epoll_ctl(server->loop_fd, EPOLL_CTL_DEL, conn->fd, &event) < 0) {
+    if (epoll_ctl(conn->server->loop_fd, EPOLL_CTL_DEL, conn->fd, &event) < 0) {
         LOG_ERROR("Could not remove TCP connection %s:%d (fd=%d) from read loop, epoll_ctl() failed errno=%d (%s)",
                   ipv4_str(conn->ipv4), conn->port, conn->fd, errno, errno_str(errno));
     }

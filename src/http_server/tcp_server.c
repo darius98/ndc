@@ -16,7 +16,7 @@
 void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
                      const struct tcp_write_loop_conf* w_loop_conf, void* data, on_conn_recv_cb on_conn_recv,
                      on_conn_closed_cb on_conn_closed) {
-    init_tcp_write_loop(&server->w_loop, w_loop_conf, server);
+    init_tcp_write_loop(&server->w_loop, w_loop_conf);
     server->tls_ctx = init_tls(conf->tls_cert_pem);
     server->conf = conf;
     server->port = port;
@@ -71,6 +71,8 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
         return 0;
     }
     atomic_store_explicit(&conn->ref_count, 1, memory_order_release);
+    atomic_store_explicit(&conn->is_closed, 0, memory_order_release);
+    conn->server = server;
     conn->fd = fd;
     if (server->tls_ctx != 0) {
         conn->tls = new_tls_for_conn(server->tls_ctx, fd);
@@ -85,13 +87,12 @@ struct tcp_conn* accept_tcp_conn(struct tcp_server* server) {
     conn->user_data = 0;
     conn->ipv4 = ipv4;
     conn->port = port;
-    atomic_store_explicit(&conn->is_closed, 0, memory_order_release);
     tcp_write_loop_add_conn(&server->w_loop, conn);
     LOG_DEBUG("TCP client connected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
     return conn;
 }
 
-void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
+void recv_from_tcp_conn(struct tcp_conn* conn) {
     if (atomic_load_explicit(&conn->is_closed, memory_order_acquire) != 0) {
         LOG_DEBUG("Connection %s:%d (fd=%d) is already closed, ignoring recv request", ipv4_str(conn->ipv4), conn->port,
                   conn->fd);
@@ -100,25 +101,25 @@ void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
 
     int num_bytes;
     if (conn->tls == 0) {
-        num_bytes = recv(conn->fd, conn->buf, tcp_conn_buf_cap(server), MSG_DONTWAIT);
+        num_bytes = recv(conn->fd, conn->buf, tcp_conn_buf_cap(conn->server), MSG_DONTWAIT);
         if (num_bytes < 0) {
             LOG_ERROR("recv() on connection %s:%d (fd=%d) failed, errno=%d (%s)", ipv4_str(conn->ipv4), conn->port,
                       conn->fd, errno, errno_str(errno));
         }
     } else {
-        enum recv_tls_result result = recv_tls(conn->tls, conn->buf, tcp_conn_buf_cap(server), &num_bytes);
+        enum recv_tls_result result = recv_tls(conn->tls, conn->buf, tcp_conn_buf_cap(conn->server), &num_bytes);
         if (result == recv_tls_retry) {
             return;
         }
     }
     if (num_bytes <= 0) {
-        close_tcp_conn_in_loop(server, conn);
+        close_tcp_conn_in_loop(conn);
         return;
     }
     LOG_DEBUG("Received %d bytes from %s:%d (fd=%d)", num_bytes, ipv4_str(conn->ipv4), conn->port, conn->fd);
     conn->buf[num_bytes] = 0;
-    if (server->on_conn_recv(server->data, conn, num_bytes) < 0) {
-        close_tcp_conn_in_loop(server, conn);
+    if (conn->server->on_conn_recv(conn->server->data, conn, num_bytes) < 0) {
+        close_tcp_conn_in_loop(conn);
     }
 }
 
@@ -128,15 +129,15 @@ struct tcp_server_notification {
     void* data;
 };
 
-void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* conn) {
-    server->on_conn_closed(server->data, conn);
-    tcp_write_loop_remove_conn(&server->w_loop, conn);
-    remove_conn_from_read_loop(server, conn);
+void close_tcp_conn_in_loop(struct tcp_conn* conn) {
+    conn->server->on_conn_closed(conn->server->data, conn);
+    tcp_write_loop_remove_conn(&conn->server->w_loop, conn);
+    remove_conn_from_read_loop(conn);
     LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
     tcp_conn_dec_refcount(conn);
 }
 
-void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
+void close_tcp_conn(struct tcp_conn* conn) {
     if (atomic_exchange_explicit(&conn->is_closed, 1, memory_order_acq_rel) == 1) {
         LOG_DEBUG("Trying to close TCP connection that is already closed %s:%d (fd=%d)", ipv4_str(conn->ipv4),
                   conn->port, conn->fd);
@@ -146,7 +147,7 @@ void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn) {
     struct tcp_server_notification notification;
     notification.type = ts_notify_close_conn;
     notification.data = conn;
-    int ret = write(server->notify_pipe[1], &notification, sizeof(struct tcp_server_notification));
+    int ret = write(conn->server->notify_pipe[1], &notification, sizeof(struct tcp_server_notification));
     if (ret != sizeof(struct tcp_server_notification)) {
         if (ret < 0) {
             LOG_FATAL("Failed to write() to TCP server notify pipe errno=%d (%s)", errno, errno_str(errno));
@@ -167,7 +168,7 @@ void tcp_server_process_notification(struct tcp_server* server) {
     }
     if (notification.type == ts_notify_close_conn) {
         struct tcp_conn* conn = notification.data;
-        close_tcp_conn_in_loop(server, conn);
+        close_tcp_conn_in_loop(conn);
     }
 }
 

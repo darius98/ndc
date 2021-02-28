@@ -4,9 +4,12 @@
 #include "../conf/conf.h"
 #include "tcp_write_loop.h"
 
+struct tcp_server;
+
 struct tcp_conn {
     _Atomic(int) ref_count;
     _Atomic(int) is_closed;
+    struct tcp_server* server;
     int fd;
     void* tls;
     struct write_task* wt_head;
@@ -38,22 +41,22 @@ void init_tcp_server(struct tcp_server* server, int port, const struct tcp_serve
                      const struct tcp_write_loop_conf* w_loop_conf, void* data, on_conn_recv_cb on_conn_recv,
                      on_conn_closed_cb on_conn_closed);
 
+void tcp_server_process_notification(struct tcp_server* server);
+
+void run_tcp_server_loop(struct tcp_server* server);
+
 struct tcp_conn* accept_tcp_conn(struct tcp_server* server);
 
-void recv_from_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
+void recv_from_tcp_conn(struct tcp_conn* conn);
 
 void tcp_conn_inc_refcount(struct tcp_conn* conn);
 
 void tcp_conn_dec_refcount(struct tcp_conn* conn);
 
-void close_tcp_conn_in_loop(struct tcp_server* server, struct tcp_conn* conn);
+void close_tcp_conn_in_loop(struct tcp_conn* conn);
 
-void close_tcp_conn(struct tcp_server* server, struct tcp_conn* conn);
+void close_tcp_conn(struct tcp_conn* conn);
 
-void tcp_server_process_notification(struct tcp_server* server);
-
-void run_tcp_server_loop(struct tcp_server* server);
-
-void remove_conn_from_read_loop(struct tcp_server* server, struct tcp_conn* conn);
+void remove_conn_from_read_loop(struct tcp_conn* conn);
 
 #endif

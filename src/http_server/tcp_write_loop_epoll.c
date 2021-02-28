@@ -47,7 +47,7 @@ void run_write_loop(struct tcp_write_loop* w_loop) {
             if (events[i].data.ptr == &w_loop->loop_notify_pipe[0]) {
                 should_process_notification = 1;
             } else {
-                tcp_write_loop_process_writes(w_loop, events[i].data.ptr);
+                tcp_write_loop_process_writes(events[i].data.ptr);
             }
         }
         if (should_process_notification) {
@@ -56,22 +56,22 @@ void run_write_loop(struct tcp_write_loop* w_loop) {
     }
 }
 
-int write_loop_add_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn) {
+int write_loop_add_conn(struct tcp_conn* conn) {
     struct epoll_event event;
     event.events = EPOLLOUT;  // TODO: | EPOLLET;
     event.data.ptr = conn;
-    if (epoll_ctl(w_loop->loop_fd, EPOLL_CTL_ADD, conn->fd, &event) < 0) {
+    if (epoll_ctl(conn->server->w_loop.loop_fd, EPOLL_CTL_ADD, conn->fd, &event) < 0) {
         LOG_ERROR("epoll_ctl() failed errno=%d (%s)", errno, errno_str(errno));
         return -1;
     }
     return 0;
 }
 
-void write_loop_remove_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn) {
+void write_loop_remove_conn(struct tcp_conn* conn) {
     struct epoll_event event;
     event.events = EPOLLOUT;  // TODO: | EPOLLET;
     event.data.ptr = conn;
-    if (epoll_ctl(w_loop->loop_fd, EPOLL_CTL_DEL, conn->fd, &event) < 0) {
+    if (epoll_ctl(conn->server->w_loop.loop_fd, EPOLL_CTL_DEL, conn->fd, &event) < 0) {
         LOG_ERROR("epoll_ctl() failed errno=%d (%s)", errno, errno_str(errno));
     }
 }

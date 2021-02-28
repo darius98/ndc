@@ -18,25 +18,22 @@ struct write_task {
 };
 
 struct tcp_write_loop {
-    struct tcp_server* tcp_server;
     int loop_notify_pipe[2];
     int loop_fd;
     int loop_max_events;
     pthread_t worker;
 };
 
-void init_tcp_write_loop(struct tcp_write_loop* w_loop, const struct tcp_write_loop_conf* conf,
-                         struct tcp_server* tcp_server);
+void init_tcp_write_loop(struct tcp_write_loop* w_loop, const struct tcp_write_loop_conf* conf);
 
 void tcp_write_loop_add_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn);
 
 void tcp_write_loop_remove_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn);
 
 /// Note: It is the responsibility of the callback to log an appropriate message for errors.
-void tcp_write_loop_push(struct tcp_write_loop* w_loop, struct tcp_conn* conn, const char* buf, int buf_len,
-                         void* data, write_task_cb cb);
+void tcp_write_loop_push(struct tcp_conn* conn, const char* buf, int buf_len, void* data, write_task_cb cb);
 
-void tcp_write_loop_process_writes(struct tcp_write_loop* w_loop, struct tcp_conn* conn);
+void tcp_write_loop_process_writes(struct tcp_conn* conn);
 
 void tcp_write_loop_process_notification(struct tcp_write_loop* w_loop);
 
@@ -45,8 +42,8 @@ void init_write_loop(struct tcp_write_loop* w_loop);
 
 void run_write_loop(struct tcp_write_loop* w_loop);
 
-int write_loop_add_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn);
+int write_loop_add_conn(struct tcp_conn* conn);
 
-void write_loop_remove_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn);
+void write_loop_remove_conn(struct tcp_conn* conn);
 
 #endif
