@@ -63,7 +63,7 @@ typedef void(*write_task_cb)(void*, int);
 
 void http_response_write(struct http_req* req, const char* buf, int buf_len, void* data, write_task_cb cb);
 
-void http_response_end(struct http_req* req, int status, int error);
+void http_response_end(struct http_req* req, int status);
 
 void http_response_fail(struct http_req* req);
 

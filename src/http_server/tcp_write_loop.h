@@ -15,6 +15,7 @@ struct write_task {
     int buf_crs;
     int buf_len;
     const char* buf;
+    struct http_req* req;
     void* data;
     write_task_cb cb;
     struct write_task* next;
@@ -34,7 +35,8 @@ void tcp_write_loop_add_conn(struct tcp_write_loop* w_loop, struct tcp_conn* con
 void tcp_write_loop_remove_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn);
 
 /// Note: It is the responsibility of the callback to log an appropriate message for errors.
-void tcp_write_loop_push(struct tcp_conn* conn, const char* buf, int buf_len, void* data, write_task_cb cb);
+void tcp_write_loop_push(struct tcp_conn* conn, const char* buf, int buf_len, struct http_req* req, void* data,
+                         write_task_cb cb);
 
 void tcp_write_loop_process_writes(struct tcp_conn* conn);
 

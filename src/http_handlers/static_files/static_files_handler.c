@@ -51,23 +51,14 @@ struct http_write_cb_data {
 
 static void http_404_write_cb(void* data, int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
-    http_response_end(cb_data->req, 404, err);
+    http_response_end(cb_data->req, 404);
     free(cb_data);
-}
-
-static void http_200_response_headers_cb(void* data, int err) {
-    struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
-    if (err != 0) {
-        LOG_ERROR("Failed to write 200 response headers to request %s %s from connection %s:%d errno=%d (%s)",
-                  req_method(cb_data->req), req_path(cb_data->req), req_remote_ipv4(cb_data->req),
-                  req_remote_port(cb_data->req), err, errno_str(err));
-    }
 }
 
 static void http_200_response_body_cb(void* data, int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
     close_file(cb_data->server->cache, cb_data->file);
-    http_response_end(cb_data->req, 200, err);
+    http_response_end(cb_data->req, 200);
     free(cb_data);
 }
 
@@ -127,6 +118,6 @@ void static_file_server_handle(void* data, struct http_req* req) {
         http_response_fail(req);
         return;
     }
-    http_response_write(req, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data, http_200_response_headers_cb);
+    http_response_write(req, cb_data->res_hdrs, cb_data->res_hdrs_len, cb_data, 0);
     http_response_write(req, file->content, file->content_len, cb_data, http_200_response_body_cb);
 }

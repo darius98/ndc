@@ -10,6 +10,18 @@
 #include "tcp_server.h"
 #include "tls.h"
 
+static void complete_task(struct write_task* task, int err) {
+    if (err != 0) {
+        LOG_ERROR("Failed to complete write task for request %s %s from connection %s:%d error=%d (%s)",
+                  req_method(task->req), req_path(task->req), req_remote_ipv4(task->req), req_remote_port(task->req),
+                  err, errno_str(err));
+    }
+    if (task->cb != 0) {
+        task->cb(task->data, err);
+    }
+    free(task);
+}
+
 static void pop_task(struct tcp_conn* conn, int err) {
     struct write_task* task = conn->wt_head;
     conn->wt_head = task->next;
@@ -17,8 +29,7 @@ static void pop_task(struct tcp_conn* conn, int err) {
         conn->wt_tail = 0;
     }
     task->next = 0;
-    task->cb(task->data, err);
-    free(task);
+    complete_task(task, err);
 }
 
 static void clear_task_list(struct tcp_conn* conn) {
@@ -28,8 +39,7 @@ static void clear_task_list(struct tcp_conn* conn) {
     conn->wt_tail = 0;
     while (task != 0) {
         struct write_task* next = task->next;
-        task->cb(task->data, ECONNABORTED);
-        free(task);
+        complete_task(task, ECONNABORTED);
         task = next;
     }
 }
@@ -87,7 +97,8 @@ void tcp_write_loop_remove_conn(struct tcp_write_loop* w_loop, struct tcp_conn* 
     write_notification(w_loop, notification);
 }
 
-void tcp_write_loop_push(struct tcp_conn* conn, const char* buf, int buf_len, void* data, write_task_cb cb) {
+void tcp_write_loop_push(struct tcp_conn* conn, const char* buf, int buf_len, struct http_req* req, void* data,
+                         write_task_cb cb) {
     struct write_task* task = malloc(sizeof(struct write_task));
     if (task == 0) {
         LOG_ERROR("Failed to allocate write task for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
@@ -99,6 +110,7 @@ void tcp_write_loop_push(struct tcp_conn* conn, const char* buf, int buf_len, vo
     task->buf_crs = 0;
     task->buf_len = buf_len;
     task->buf = buf;
+    task->req = req;
     task->data = data;
     task->cb = cb;
 
