@@ -1,6 +1,10 @@
 #ifndef NDC_CONF_CONF_H_
 #define NDC_CONF_CONF_H_
 
+#include "utils/config.h"
+
+NDC_BEGIN_DECLS
+
 #define NDC_CONF_FILE_ENV_VAR "NDC_CONF_FILE"
 
 struct logging_conf {
@@ -44,5 +48,7 @@ struct conf {
 struct conf default_conf();
 
 struct conf load_conf();
+
+NDC_END_DECLS
 
 #endif

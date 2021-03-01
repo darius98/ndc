@@ -1,6 +1,10 @@
 #ifndef NDC_HTTP_SERVER_TLS_H_
 #define NDC_HTTP_SERVER_TLS_H_
 
+#include "utils/config.h"
+
+NDC_BEGIN_DECLS
+
 void* init_tls(char* cert_pem_file);
 
 void* new_tls_for_conn(void* tls_ctx, int fd);
@@ -18,5 +22,7 @@ enum recv_tls_result
 enum recv_tls_result recv_tls(void* tls, char* buf, int buf_len, int* num_bytes_read);
 
 int write_tls(void* tls, const char* buf, int buf_len);
+
+NDC_END_DECLS
 
 #endif

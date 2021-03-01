@@ -1,9 +1,12 @@
 #ifndef NDC_LOGGING_LOGGING_H_
 #define NDC_LOGGING_LOGGING_H_
 
-#include "../conf/conf.h"
-
 #include <stdint.h>
+
+#include "conf/conf.h"
+#include "utils/config.h"
+
+NDC_BEGIN_DECLS
 
 #define LOG_LEVEL_DEBUG 0
 #define LOG_LEVEL_INFO 1
@@ -73,5 +76,7 @@ const char* ipv4_str(uint32_t ipv4);
 #endif
 
 #define LOG_FATAL(...) internal_log_fatal_message(INTERNAL_FILENAME_LINENO, LOG_LEVEL_FATAL, __VA_ARGS__)
+
+NDC_END_DECLS
 
 #endif

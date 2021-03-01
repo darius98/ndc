@@ -1,10 +1,13 @@
 #ifndef NDC_HTTP_SERVER_HTTP_SERVER_H_
 #define NDC_HTTP_SERVER_HTTP_SERVER_H_
 
-#include "../conf/conf.h"
-#include "../utils/ff_pthread.h"
+#include "conf/conf.h"
 #include "http_req.h"
 #include "tcp_server.h"
+#include "utils/config.h"
+#include "utils/ff_pthread.h"
+
+NDC_BEGIN_DECLS
 
 struct http_handler {
     char* name;
@@ -39,5 +42,7 @@ void init_http_server(struct http_server* server, const struct conf* conf);
 void install_http_handler(struct http_server* server, struct http_handler handler);
 
 void start_http_server(struct http_server* server);
+
+NDC_END_DECLS
 
 #endif

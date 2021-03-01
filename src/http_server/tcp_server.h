@@ -1,10 +1,13 @@
 #ifndef NDC_HTTP_SERVER_TCP_SERVER_H_
 #define NDC_HTTP_SERVER_TCP_SERVER_H_
 
-#include "../conf/conf.h"
-#include "tcp_write_loop.h"
-
 #include <stdint.h>
+
+#include "conf/conf.h"
+#include "tcp_write_loop.h"
+#include "utils/config.h"
+
+NDC_BEGIN_DECLS
 
 struct tcp_server;
 
@@ -60,5 +63,7 @@ void close_tcp_conn_in_loop(struct tcp_conn* conn);
 void close_tcp_conn(struct tcp_conn* conn);
 
 void remove_conn_from_read_loop(struct tcp_conn* conn);
+
+NDC_END_DECLS
 
 #endif

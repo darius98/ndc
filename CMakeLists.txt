@@ -11,19 +11,19 @@ check_include_files("sys/event.h" USE_KQUEUE)
 check_include_files("sys/epoll.h" USE_EPOLL)
 
 set(ndc_sources
-        src/app.c
         src/conf/conf.c
-        src/utils/fd.c
-        src/utils/ff_pthread.c
         src/http_handlers/static_files/file_cache.c
+        src/http_handlers/static_files/static_files_handler.c
         src/http_server/http_req.c
         src/http_server/http_server.c
-        src/logging/logging.c
-        src/main.c
-        src/http_server/tls.c
-        src/http_handlers/static_files/static_files_handler.c
         src/http_server/tcp_server.c
-        src/http_server/tcp_write_loop.c)
+        src/http_server/tcp_write_loop.c
+        src/http_server/tls.c
+        src/logging/logging.c
+        src/utils/fd.c
+        src/utils/ff_pthread.c
+        src/app.c
+        src/main.c)
 if (USE_KQUEUE)
     message(STATUS "Using kqueue for tcp loop")
     list(APPEND ndc_sources
@@ -40,6 +40,7 @@ endif()
 
 add_executable(ndc ${ndc_sources})
 target_compile_options(ndc PRIVATE -Wall -Wextra -Wpedantic)
+target_include_directories(ndc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Using LTO for release build")
     target_compile_options(ndc PRIVATE -flto)

@@ -1,9 +1,12 @@
 #ifndef NDC_HTTP_SERVER_TCP_WRITE_LOOP_H_
 #define NDC_HTTP_SERVER_TCP_WRITE_LOOP_H_
 
-#include "../conf/conf.h"
-#include "../utils/ff_pthread.h"
+#include "conf/conf.h"
 #include "http_req.h"
+#include "utils/config.h"
+#include "utils/ff_pthread.h"
+
+NDC_BEGIN_DECLS
 
 struct tcp_server;
 struct tcp_conn;
@@ -45,5 +48,7 @@ void run_write_loop(struct tcp_write_loop* w_loop);
 int write_loop_add_conn(struct tcp_conn* conn);
 
 void write_loop_remove_conn(struct tcp_conn* conn);
+
+NDC_END_DECLS
 
 #endif

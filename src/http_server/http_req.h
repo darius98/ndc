@@ -1,6 +1,10 @@
 #ifndef NDC_HTTP_SERVER_HTTP_REQ_H_
 #define NDC_HTTP_SERVER_HTTP_REQ_H_
 
+#include "utils/config.h"
+
+NDC_BEGIN_DECLS
+
 struct http_server;
 struct tcp_conn;
 
@@ -62,5 +66,7 @@ void http_response_write(struct http_req* req, const char* buf, int buf_len, voi
 void http_response_end(struct http_req* req, int status, int error);
 
 void http_response_fail(struct http_req* req);
+
+NDC_END_DECLS
 
 #endif
