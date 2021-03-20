@@ -10,11 +10,51 @@ include(CheckIncludeFiles)
 check_include_files("sys/event.h" USE_KQUEUE)
 check_include_files("sys/epoll.h" USE_EPOLL)
 
-set(ndc_sources
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(STATUS "Using LTO for release build")
+else ()
+    message(STATUS "Using address & UB sanitizers for non-release build")
+endif()
+
+function (apply_ndc_target_opts TARGET)
+    target_compile_options(${TARGET} PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+    target_include_directories(${TARGET} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    if (CMAKE_BUILD_TYPE STREQUAL "Release")
+        target_compile_options(${TARGET} PRIVATE -flto)
+        target_link_options(${TARGET} PRIVATE -flto)
+    else ()
+        target_compile_definitions(${TARGET} PRIVATE -DNDC_LOG_FILE_AND_LINE -DNDC_LOG_LEVEL=0)
+        target_compile_options(${TARGET} PRIVATE -fsanitize=address,undefined)
+        target_link_options(${TARGET} PRIVATE -fsanitize=address,undefined)
+    endif()
+endfunction ()
+
+function (add_ndc_library TARGET)
+    add_library(${TARGET} ${ARGN})
+    apply_ndc_target_opts(${TARGET})
+endfunction ()
+
+function (add_ndc_executable TARGET)
+    add_executable(${TARGET} ${ARGN})
+    apply_ndc_target_opts(${TARGET})
+endfunction ()
+
+set(ndc_event_loop_sources src/event_loop/event_loop.c)
+if (USE_KQUEUE)
+    message(STATUS "Using kqueue for event loop")
+    list(APPEND ndc_event_loop_sources src/event_loop/event_loop_kqueue.c)
+elseif (USE_EPOLL)
+    message(STATUS "Using epoll for event loop")
+    list(APPEND ndc_event_loop_sources src/event_loop/event_loop_epoll.c)
+else ()
+    message(FATAL_ERROR "No suitable backend for event loop implementation (kqueue and epoll are supported)")
+endif()
+add_ndc_library(ndc_event_loop STATIC ${ndc_event_loop_sources})
+
+add_ndc_executable(ndc
         src/conf/conf.c
         src/http_handlers/static_files/file_cache.c
         src/http_handlers/static_files/static_files_handler.c
-        src/event_loop/event_loop.c
         src/http_server/http_req.c
         src/http_server/http_server.c
         src/http_server/tcp_server.c
@@ -25,36 +65,7 @@ set(ndc_sources
         src/utils/ff_pthread.c
         src/app.c
         src/main.c)
-if (USE_KQUEUE)
-    message(STATUS "Using kqueue for tcp loop")
-    list(APPEND ndc_sources
-            src/event_loop/event_loop_kqueue.c
-            src/http_server/tcp_server_kqueue.c
-            src/http_server/tcp_write_loop_kqueue.c)
-elseif (USE_EPOLL)
-    message(STATUS "Using epoll for tcp loop")
-    list(APPEND ndc_sources
-            src/event_loop/event_loop_epoll.c
-            src/http_server/tcp_server_epoll.c
-            src/http_server/tcp_write_loop_epoll.c)
-else ()
-    message(FATAL_ERROR "No suitable backend for tcp loop (kqueue and epoll are supported)")
-endif()
-
-add_executable(ndc ${ndc_sources})
-target_compile_options(ndc PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
-target_include_directories(ndc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    message(STATUS "Using LTO for release build")
-    target_compile_options(ndc PRIVATE -flto)
-    target_link_options(ndc PRIVATE -flto)
-else ()
-    target_compile_definitions(ndc PRIVATE -DNDC_LOG_FILE_AND_LINE -DNDC_LOG_LEVEL=0)
-    message(STATUS "Using address & UB sanitizers for debug build")
-    target_compile_options(ndc PRIVATE -fsanitize=address,undefined)
-    target_link_options(ndc PRIVATE -fsanitize=address,undefined)
-endif()
-
+target_link_libraries(ndc PUBLIC ndc_event_loop)
 # Compile options for the OpenSSL dependency
 if (APPLE)
     message(STATUS "On MacOS, assuming OpenSSL was installed using brew into /usr/local/opt/openssl/")

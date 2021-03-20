@@ -19,7 +19,7 @@ void event_loop_init(struct event_loop* loop, int max_events) {
         LOG_FATAL("event_loop_init: failed to create notify pipe");
     }
 
-    if (event_loop_add_read_fd(loop, loop->notify_pipe[0], 0) < 0) {
+    if (event_loop_add_read_fd(loop, loop->notify_pipe[0], &loop->notify_pipe[0]) < 0) {
         LOG_FATAL("event_loop_init: failed to attach notify pipe to event loop, %s failed errno=%d (%s)",
                   event_loop_ctl_syscall_name, errno, errno_str(errno));
     }

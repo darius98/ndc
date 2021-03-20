@@ -47,8 +47,6 @@ void init_tcp_server(struct tcp_server* server, int port, const struct tcp_serve
                      const struct tcp_write_loop_conf* w_loop_conf, void* data, on_conn_recv_cb on_conn_recv,
                      on_conn_closed_cb on_conn_closed);
 
-void tcp_server_process_notification(struct tcp_server* server);
-
 void run_tcp_server_loop(struct tcp_server* server);
 
 void accept_tcp_conn(struct tcp_server* server);

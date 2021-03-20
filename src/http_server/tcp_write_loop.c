@@ -110,7 +110,7 @@ static int push_task(struct tcp_conn* conn, struct write_task* task) {
     return 0;
 }
 
-void tcp_write_loop_process_writes(struct tcp_conn* conn) {
+static void tcp_write_loop_process_writes(struct tcp_conn* conn) {
     struct write_task* task = conn->wt_head;
     while (task != 0) {
         ssize_t chunk_sz;
@@ -140,7 +140,8 @@ void tcp_write_loop_process_writes(struct tcp_conn* conn) {
     }
 }
 
-void tcp_write_loop_process_notification(struct event_loop* w_loop) {
+static void tcp_write_loop_process_notification(void* cb_data) {
+    struct event_loop* w_loop = (struct event_loop*)cb_data;
     struct write_worker_notification notification;
     event_loop_recv_notification(w_loop, &notification, sizeof(notification));
 
@@ -167,4 +168,14 @@ void tcp_write_loop_process_notification(struct event_loop* w_loop) {
         conn->wt_head = 0;
         conn->wt_tail = 0;
     }
+}
+
+static void tcp_write_loop_process_event(void* data, int flags, void* cb_data) {
+    if (flags & evf_write) {
+        tcp_write_loop_process_writes((struct tcp_conn*)data);
+    }
+}
+
+void run_write_loop(struct event_loop* w_loop) {
+    event_loop_run(w_loop, w_loop, tcp_write_loop_process_event, tcp_write_loop_process_notification);
 }

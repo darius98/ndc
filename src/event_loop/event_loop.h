@@ -31,6 +31,20 @@ int event_loop_add_write_fd(struct event_loop* loop, int fd, void* data);
 
 int event_loop_remove_write_fd(struct event_loop* loop, int fd, void* data);
 
+enum event_loop_event_flags
+{
+    evf_read = 1,
+    evf_write = 2,
+    evf_eof = 4,
+};
+
+typedef void (*event_loop_notification_ready_cb)(void* cb_data);
+typedef void (*event_loop_event_cb)(void* data, int flags, void* cb_data);
+
+// Note: Aborts on failure. TODO: Don't.
+void event_loop_run(struct event_loop* loop, void* cb_data, event_loop_event_cb event_cb,
+                    event_loop_notification_ready_cb notification_ready_cb);
+
 NDC_END_DECLS
 
 #endif

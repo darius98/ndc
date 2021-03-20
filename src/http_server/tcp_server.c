@@ -35,7 +35,7 @@ void init_tcp_server(struct tcp_server* server, int port, const struct tcp_serve
     if (server->listen_fd < 0) {
         LOG_FATAL("Failed to initialize TCP server");
     }
-    if (event_loop_add_read_fd(&server->r_loop, server->listen_fd, 0) < 0) {
+    if (event_loop_add_read_fd(&server->r_loop, server->listen_fd, &server->listen_fd) < 0) {
         LOG_FATAL("Failed to initialize TCP server: %s failed errno=%d (%s)", event_loop_ctl_syscall_name, errno,
                   errno_str(errno));
     }
@@ -167,7 +167,8 @@ void close_tcp_conn(struct tcp_conn* conn) {
     event_loop_send_notification(&conn->server->r_loop, &notification, sizeof(notification));
 }
 
-void tcp_server_process_notification(struct tcp_server* server) {
+static void tcp_server_process_notification(void* cb_data) {
+    struct tcp_server* server = (struct tcp_server*)cb_data;
     struct tcp_server_notification notification;
     event_loop_recv_notification(&server->r_loop, &notification, sizeof(notification));
     if (notification.type == ts_notify_close_conn) {
@@ -189,4 +190,24 @@ void tcp_conn_dec_refcount(struct tcp_conn* conn) {
         close_and_log(conn->fd, conn->ipv4, conn->port);
         free(conn);
     }
+}
+
+static void process_event_cb(void* data, int flags, void* cb_data) {
+    struct tcp_server* server = (struct tcp_server*)cb_data;
+    if (data == &server->listen_fd) {
+        LOG_DEBUG("Received kevent on TCP server socket (fd=%d)", server->listen_fd);
+        accept_tcp_conn(server);
+    } else {
+        struct tcp_conn* conn = (struct tcp_conn*)data;
+        if (flags & evf_eof) {
+            close_tcp_conn_in_loop(conn);
+        } else if (flags & evf_read) {
+            LOG_DEBUG("Received read kevent on connection %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
+            recv_from_tcp_conn(conn);
+        }
+    }
+}
+
+void run_tcp_server_loop(struct tcp_server* server) {
+    event_loop_run(&server->r_loop, server, process_event_cb, tcp_server_process_notification);
 }

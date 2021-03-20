@@ -29,10 +29,6 @@ void tcp_write_loop_remove_conn(struct event_loop* w_loop, struct tcp_conn* conn
 void tcp_write_loop_push(struct tcp_conn* conn, const char* buf, int buf_len, struct http_req* req, void* data,
                          write_task_cb cb);
 
-void tcp_write_loop_process_writes(struct tcp_conn* conn);
-
-void tcp_write_loop_process_notification(struct event_loop* w_loop);
-
 void run_write_loop(struct event_loop* w_loop);
 
 NDC_END_DECLS
