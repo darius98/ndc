@@ -6,7 +6,6 @@
 #include <unistd.h>
 
 #include "../logging/logging.h"
-#include "../utils/fd.h"
 #include "tcp_server.h"
 #include "tls.h"
 
@@ -44,57 +43,32 @@ static void clear_task_list(struct tcp_conn* conn) {
     }
 }
 
-static void* tcp_write_loop_worker(void* arg) {
-    struct tcp_write_loop* w_loop = (struct tcp_write_loop*)arg;
-    run_write_loop(w_loop);
-    return 0;
-}
-
-void init_tcp_write_loop(struct tcp_write_loop* w_loop, const struct tcp_write_loop_conf* conf) {
-    w_loop->loop_max_events = conf->events_batch_size;
-    if (make_nonblocking_pipe(w_loop->loop_notify_pipe) < 0) {
-        LOG_FATAL("Failed to create notify pipe for TCP write loop");
-    }
-    init_write_loop(w_loop);
-    ff_pthread_create(&w_loop->worker, 0, tcp_write_loop_worker, w_loop);
-}
+enum write_worker_notification_type
+{
+    ww_notify_add,
+    ww_notify_execute,
+    ww_notify_remove,
+};
 
 struct write_worker_notification {
-    enum
-    {
-        ww_notify_add,
-        ww_notify_execute,
-        ww_notify_remove
-    } type;
+    enum write_worker_notification_type type;
     struct tcp_conn* conn;
     struct write_task* task;
 };
 
-static void write_notification(struct tcp_write_loop* w_loop, struct write_worker_notification notification) {
-    int ret = write(w_loop->loop_notify_pipe[1], &notification, sizeof(struct write_worker_notification));
-    if (ret != sizeof(struct write_worker_notification)) {
-        if (ret < 0) {
-            LOG_FATAL("Failed to write() to TCP write loop notify pipe errno=%d (%s)", errno, errno_str(errno));
-        } else {
-            LOG_FATAL("Failed to write() to TCP write loop notify pipe, wrote %d out of %d bytes.", ret,
-                      (int)sizeof(struct write_worker_notification));
-        }
-    }
-}
-
-void tcp_write_loop_add_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn) {
+void tcp_write_loop_add_conn(struct event_loop* w_loop, struct tcp_conn* conn) {
     tcp_conn_inc_refcount(conn);
     struct write_worker_notification notification;
     notification.conn = conn;
     notification.type = ww_notify_add;
-    write_notification(w_loop, notification);
+    event_loop_send_notification(w_loop, &notification, sizeof(notification));
 }
 
-void tcp_write_loop_remove_conn(struct tcp_write_loop* w_loop, struct tcp_conn* conn) {
+void tcp_write_loop_remove_conn(struct event_loop* w_loop, struct tcp_conn* conn) {
     struct write_worker_notification notification;
     notification.conn = conn;
     notification.type = ww_notify_remove;
-    write_notification(w_loop, notification);
+    event_loop_send_notification(w_loop, &notification, sizeof(notification));
 }
 
 void tcp_write_loop_push(struct tcp_conn* conn, const char* buf, int buf_len, struct http_req* req, void* data,
@@ -114,12 +88,13 @@ void tcp_write_loop_push(struct tcp_conn* conn, const char* buf, int buf_len, st
     task->data = data;
     task->cb = cb;
 
+    tcp_conn_inc_refcount(conn);  // To make sure the connection stays alive until push_task is executed.
+
     struct write_worker_notification notification;
     notification.conn = conn;
     notification.task = task;
     notification.type = ww_notify_execute;
-    write_notification(&conn->server->w_loop, notification);
-    tcp_conn_inc_refcount(conn);  // To make sure the connection stays alive until push_task is executed.
+    event_loop_send_notification(&conn->server->w_loop, &notification, sizeof(notification));
 }
 
 static int push_task(struct tcp_conn* conn, struct write_task* task) {
@@ -165,28 +140,31 @@ void tcp_write_loop_process_writes(struct tcp_conn* conn) {
     }
 }
 
-void tcp_write_loop_process_notification(struct tcp_write_loop* w_loop) {
+void tcp_write_loop_process_notification(struct event_loop* w_loop) {
     struct write_worker_notification notification;
-    errno = 0;
-    ssize_t n_bytes = read(w_loop->loop_notify_pipe[0], &notification, sizeof(struct write_worker_notification));
-    if (n_bytes != sizeof(struct write_worker_notification)) {
-        LOG_FATAL("TCP write loop: failed to read from notification pipe, returned %d, errno=%d (%s)", (int)n_bytes,
-                  errno, errno_str(errno));
-    }
-    if (notification.type == ww_notify_execute) {
-        if (push_task(notification.conn, notification.task) == 0) {
-            tcp_write_loop_process_writes(notification.conn);
+    event_loop_recv_notification(w_loop, &notification, sizeof(notification));
+
+    enum write_worker_notification_type type = notification.type;
+    struct tcp_conn* conn = notification.conn;
+    if (type == ww_notify_execute) {
+        if (push_task(conn, notification.task) == 0) {
+            tcp_write_loop_process_writes(conn);
         }
-    } else if (notification.type == ww_notify_remove) {
-        clear_task_list(notification.conn);
-        write_loop_remove_conn(notification.conn);
-        tcp_conn_dec_refcount(notification.conn);
-    } else if (notification.type == ww_notify_add) {
-        if (write_loop_add_conn(notification.conn) < 0) {
-            tcp_conn_dec_refcount(notification.conn);
+    } else if (type == ww_notify_remove) {
+        clear_task_list(conn);
+        if (event_loop_remove_write_fd(&conn->server->w_loop, conn->fd, conn) < 0) {
+            LOG_ERROR("Failed to remove connection from TCP write loop: %s() failed errno=%d (%s)",
+                      EVENT_LOOP_CTL_SYSCALL_NAME, errno, errno_str(errno));
+        }
+        tcp_conn_dec_refcount(conn);
+    } else if (type == ww_notify_add) {
+        if (event_loop_add_write_fd(&conn->server->w_loop, conn->fd, conn) < 0) {
+            LOG_ERROR("Failed to add connection to TCP write loop: %s() failed errno=%d (%s)",
+                      EVENT_LOOP_CTL_SYSCALL_NAME, errno, errno_str(errno));
+            tcp_conn_dec_refcount(conn);
             return;
         }
-        notification.conn->wt_head = 0;
-        notification.conn->wt_tail = 0;
+        conn->wt_head = 0;
+        conn->wt_tail = 0;
     }
 }

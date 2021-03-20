@@ -29,11 +29,11 @@ typedef int (*on_conn_recv_cb)(void*, struct tcp_conn*, int);
 typedef void (*on_conn_closed_cb)(void*, struct tcp_conn*);
 
 struct tcp_server {
-    struct tcp_write_loop w_loop;
+    struct event_loop r_loop;
+    struct event_loop w_loop;
+    pthread_t w_loop_thread;
     const struct tcp_server_conf* conf;
     int listen_fd;
-    int loop_fd;
-    int notify_pipe[2];
     int port;
     void* tls_ctx;
     void* data;
@@ -50,7 +50,7 @@ void tcp_server_process_notification(struct tcp_server* server);
 
 void run_tcp_server_loop(struct tcp_server* server);
 
-struct tcp_conn* accept_tcp_conn(struct tcp_server* server);
+void accept_tcp_conn(struct tcp_server* server);
 
 void recv_from_tcp_conn(struct tcp_conn* conn);
 
@@ -61,8 +61,6 @@ void tcp_conn_dec_refcount(struct tcp_conn* conn);
 void close_tcp_conn_in_loop(struct tcp_conn* conn);
 
 void close_tcp_conn(struct tcp_conn* conn);
-
-void remove_conn_from_read_loop(struct tcp_conn* conn);
 
 NDC_END_DECLS
 

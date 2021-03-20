@@ -10,10 +10,12 @@ include(CheckIncludeFiles)
 check_include_files("sys/event.h" USE_KQUEUE)
 check_include_files("sys/epoll.h" USE_EPOLL)
 
+set(ndc_flags "")
 set(ndc_sources
         src/conf/conf.c
         src/http_handlers/static_files/file_cache.c
         src/http_handlers/static_files/static_files_handler.c
+        src/http_server/event_loop.c
         src/http_server/http_req.c
         src/http_server/http_server.c
         src/http_server/tcp_server.c
@@ -29,17 +31,20 @@ if (USE_KQUEUE)
     list(APPEND ndc_sources
             src/http_server/tcp_server_kqueue.c
             src/http_server/tcp_write_loop_kqueue.c)
+    list(APPEND ndc_flags "-DNDC_USE_KQUEUE")
 elseif (USE_EPOLL)
     message(STATUS "Using epoll for tcp loop")
     list(APPEND ndc_sources
             src/http_server/tcp_server_epoll.c
             src/http_server/tcp_write_loop_epoll.c)
+    list(APPEND ndc_flags "-DNDC_USE_EPOLL")
 else ()
     message(FATAL_ERROR "No suitable backend for tcp loop (kqueue and epoll are supported)")
 endif()
 
 add_executable(ndc ${ndc_sources})
-target_compile_options(ndc PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(ndc PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+target_compile_definitions(ndc PRIVATE ${ndc_flags})
 target_include_directories(ndc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Using LTO for release build")
