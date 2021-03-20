@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "conf/conf.h"
+#include "event_loop/event_loop.h"
 #include "tcp_write_loop.h"
 #include "utils/config.h"
 

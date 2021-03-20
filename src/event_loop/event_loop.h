@@ -1,5 +1,5 @@
-#ifndef NDC_HTTP_SERVER_EVENT_LOOP_H_
-#define NDC_HTTP_SERVER_EVENT_LOOP_H_
+#ifndef NDC_EVENT_LOOP_EVENT_LOOP_H_
+#define NDC_EVENT_LOOP_EVENT_LOOP_H_
 
 #include "utils/config.h"
 
@@ -21,13 +21,7 @@ void event_loop_send_notification(struct event_loop* loop, const void* payload, 
 // Note: Aborts on failure. TODO: Don't.
 void event_loop_recv_notification(struct event_loop* loop, void* payload, int payload_size);
 
-#ifdef NDC_USE_KQUEUE
-#define EVENT_LOOP_CTL_SYSCALL_NAME "kqueue"
-#else
-#define EVENT_LOOP_CTL_SYSCALL_NAME "epoll_ctl"
-#endif
-
-int event_loop_sizeof_event();
+extern const char* event_loop_ctl_syscall_name;
 
 int event_loop_add_read_fd(struct event_loop* loop, int fd, void* data);
 

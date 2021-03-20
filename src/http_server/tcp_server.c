@@ -36,7 +36,7 @@ void init_tcp_server(struct tcp_server* server, int port, const struct tcp_serve
         LOG_FATAL("Failed to initialize TCP server");
     }
     if (event_loop_add_read_fd(&server->r_loop, server->listen_fd, 0) < 0) {
-        LOG_FATAL("Failed to initialize TCP server: %s() failed errno=%d (%s)", EVENT_LOOP_CTL_SYSCALL_NAME, errno,
+        LOG_FATAL("Failed to initialize TCP server: %s() failed errno=%d (%s)", event_loop_ctl_syscall_name, errno,
                   errno_str(errno));
     }
 }
@@ -98,7 +98,7 @@ void accept_tcp_conn(struct tcp_server* server) {
 
     if (event_loop_add_read_fd(&server->r_loop, conn->fd, conn) < 0) {
         LOG_ERROR("Could not accept TCP connection from %s:%d (fd=%d), %s() failed errno=%d (%s)", ipv4_str(conn->ipv4),
-                  conn->port, conn->fd, EVENT_LOOP_CTL_SYSCALL_NAME, errno, errno_str(errno));
+                  conn->port, conn->fd, event_loop_ctl_syscall_name, errno, errno_str(errno));
         close_tcp_conn_in_loop(conn);
         return;
     }
@@ -147,7 +147,7 @@ void close_tcp_conn_in_loop(struct tcp_conn* conn) {
     conn->server->on_conn_closed(conn->server->data, conn);
     if (event_loop_remove_read_fd(&conn->server->r_loop, conn->fd, conn) < 0) {
         LOG_ERROR("Could not remove TCP connection %s:%d (fd=%d) from read loop, %s() failed errno=%d (%s)",
-                  ipv4_str(conn->ipv4), conn->port, conn->fd, EVENT_LOOP_CTL_SYSCALL_NAME, errno, errno_str(errno));
+                  ipv4_str(conn->ipv4), conn->port, conn->fd, event_loop_ctl_syscall_name, errno, errno_str(errno));
     }
     tcp_write_loop_remove_conn(&conn->server->w_loop, conn);
     LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);

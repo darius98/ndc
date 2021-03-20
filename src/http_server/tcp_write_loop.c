@@ -5,7 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "../logging/logging.h"
+#include "logging/logging.h"
 #include "tcp_server.h"
 #include "tls.h"
 
@@ -154,13 +154,13 @@ void tcp_write_loop_process_notification(struct event_loop* w_loop) {
         clear_task_list(conn);
         if (event_loop_remove_write_fd(&conn->server->w_loop, conn->fd, conn) < 0) {
             LOG_ERROR("Failed to remove connection from TCP write loop: %s() failed errno=%d (%s)",
-                      EVENT_LOOP_CTL_SYSCALL_NAME, errno, errno_str(errno));
+                      event_loop_ctl_syscall_name, errno, errno_str(errno));
         }
         tcp_conn_dec_refcount(conn);
     } else if (type == ww_notify_add) {
         if (event_loop_add_write_fd(&conn->server->w_loop, conn->fd, conn) < 0) {
             LOG_ERROR("Failed to add connection to TCP write loop: %s() failed errno=%d (%s)",
-                      EVENT_LOOP_CTL_SYSCALL_NAME, errno, errno_str(errno));
+                      event_loop_ctl_syscall_name, errno, errno_str(errno));
             tcp_conn_dec_refcount(conn);
             return;
         }

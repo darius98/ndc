@@ -2,14 +2,13 @@
 #define NDC_HTTP_SERVER_TCP_WRITE_LOOP_H_
 
 #include "conf/conf.h"
-#include "event_loop.h"
+#include "event_loop/event_loop.h"
 #include "http_req.h"
 #include "utils/config.h"
 #include "utils/ff_pthread.h"
 
 NDC_BEGIN_DECLS
 
-struct tcp_server;
 struct tcp_conn;
 
 struct write_task {
