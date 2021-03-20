@@ -1,28 +1,16 @@
-#include <errno.h>
-#include <stdlib.h>
-#include <unistd.h>
+#include <sys/epoll.h>
 
 #include "event_loop.h"
 #include "event_loop_internal.h"
-#include "logging/logging.h"
-#include "utils/fd.h"
 
 const char* event_loop_ctl_syscall_name = "epoll_ctl";
 
+const char* event_loop_create_loop_syscall_name = "epoll_create1";
+
 const int event_loop_sizeof_event = sizeof(struct epoll_event);
 
-void event_loop_init_internal(struct event_loop* loop) {
-    loop->fd = epoll_create1(0);
-    if (loop->fd < 0) {
-        LOG_FATAL("Failed to initialize event loop, epoll_create1() failed errno=%d (%s)", errno, errno_str(errno));
-    }
-    struct epoll_event event;
-    event.events = EPOLLIN;
-    event.data.ptr = &loop->notify_pipe[0];
-    if (epoll_ctl(loop->fd, EPOLL_CTL_ADD, loop->notify_pipe[0], &event) < 0) {
-        LOG_FATAL("Failed to attach notify pipe to event loop, epoll_ctl() failed errno=%d (%s)", errno,
-                  errno_str(errno));
-    }
+int event_loop_create_loop_fd() {
+    return epoll_create1(0);
 }
 
 static int event_loop_add_fd(struct event_loop* loop, int fd, void* data, int ctl, uint32_t events) {

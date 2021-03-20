@@ -4,7 +4,7 @@
 
 static void fail_fast(const char* func, int ret) {
     if (ret != 0) {
-        LOG_FATAL("%s() failed, returned %d", func, ret);
+        LOG_FATAL("%s failed, returned %d", func, ret);
     }
 }
 
