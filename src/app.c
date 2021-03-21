@@ -1,8 +1,8 @@
 #include "app.h"
 
-#include "http_handlers/static_files/file_cache.h"
-#include "http_handlers/static_files/static_files_handler.h"
-#include "http_server/http_server.h"
+#include "http/server/http_server.h"
+#include "http/handlers/static_files/file_cache.h"
+#include "http/handlers/static_files/static_files_handler.h"
 
 int always_should_handle(UNUSED void* data, UNUSED struct http_req* req) {
     return 1;

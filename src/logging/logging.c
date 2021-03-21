@@ -11,8 +11,8 @@
 #include <string.h>
 #include <time.h>
 
-#include "../http_server/http_req.h"
-#include "../http_server/tcp_server.h"
+#include "tcp/tcp_server.h"
+#include "http/server/http_req.h"
 
 static struct {
     FILE* access_file;

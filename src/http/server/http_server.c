@@ -5,9 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../logging/logging.h"
 #include "http_req.h"
-#include "tcp_server.h"
+#include "tcp/tcp_server.h"
+#include "logging/logging.h"
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
     LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req_method(req), req_path(req), req_remote_ipv4(req),

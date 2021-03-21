@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../../http_server/http_server.h"
-#include "../../logging/logging.h"
 #include "file_cache.h"
+#include "http/server/http_server.h"
+#include "logging/logging.h"
 
 static const char* http_404_response =
     "HTTP/1.1 404 Not found\r\n"

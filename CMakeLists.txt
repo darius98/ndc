@@ -53,13 +53,13 @@ add_ndc_library(ndc_event_loop STATIC ${ndc_event_loop_sources})
 
 add_ndc_executable(ndc
         src/conf/conf.c
-        src/http_handlers/static_files/file_cache.c
-        src/http_handlers/static_files/static_files_handler.c
-        src/http_server/http_req.c
-        src/http_server/http_server.c
-        src/http_server/tcp_server.c
-        src/http_server/tcp_write_loop.c
-        src/http_server/tls.c
+        src/http/handlers/static_files/file_cache.c
+        src/http/handlers/static_files/static_files_handler.c
+        src/http/server/http_req.c
+        src/http/server/http_server.c
+        src/tcp/tcp_server.c
+        src/tcp/tcp_write_loop.c
+        src/tcp/tls.c
         src/logging/logging.c
         src/utils/fd.c
         src/utils/ff_pthread.c
