@@ -167,7 +167,7 @@ void close_tcp_conn(struct tcp_conn* conn) {
     event_loop_send_notification(&conn->server->r_loop, &notification, sizeof(notification));
 }
 
-static void tcp_server_process_notification(void* cb_data) {
+static int process_notification_cb(void* cb_data) {
     struct tcp_server* server = (struct tcp_server*)cb_data;
     struct tcp_server_notification notification;
     event_loop_recv_notification(&server->r_loop, &notification, sizeof(notification));
@@ -175,6 +175,7 @@ static void tcp_server_process_notification(void* cb_data) {
         struct tcp_conn* conn = notification.data;
         close_tcp_conn_in_loop(conn);
     }
+    return 0;
 }
 
 void tcp_conn_inc_refcount(struct tcp_conn* conn) {
@@ -192,7 +193,7 @@ void tcp_conn_dec_refcount(struct tcp_conn* conn) {
     }
 }
 
-static void process_event_cb(void* data, int flags, void* cb_data) {
+static int process_event_cb(void* data, int flags, void* cb_data) {
     struct tcp_server* server = (struct tcp_server*)cb_data;
     if (data == &server->listen_fd) {
         LOG_DEBUG("Received kevent on TCP server socket (fd=%d)", server->listen_fd);
@@ -206,8 +207,18 @@ static void process_event_cb(void* data, int flags, void* cb_data) {
             recv_from_tcp_conn(conn);
         }
     }
+    return 0;
 }
 
 void run_tcp_server_loop(struct tcp_server* server) {
-    event_loop_run(&server->r_loop, server, process_event_cb, tcp_server_process_notification);
+    int run_status = event_loop_run(&server->r_loop, server, process_event_cb, process_notification_cb);
+    if (run_status != 0) {
+        if (run_status < 0) {
+            LOG_FATAL("TCP read event loop failed: %s failed errno=%d (%s)", event_loop_run_syscall_name, errno,
+                      errno_str(errno));
+        } else {
+            LOG_FATAL("TCP read event loop failed: event processing callback returned error code=%d (%s)", run_status,
+                      errno_str(run_status));
+        }
+    }
 }

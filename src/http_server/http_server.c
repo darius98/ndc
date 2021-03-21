@@ -259,7 +259,7 @@ static int on_conn_recv(void* data, struct tcp_conn* conn, int num_bytes) {
     }
 }
 
-static void on_conn_close(void* data, struct tcp_conn* conn) {
+static void on_conn_close(UNUSED void* data, struct tcp_conn* conn) {
     if (conn->user_data != 0) {
         http_response_end(conn->user_data, 0);
         conn->user_data = 0;

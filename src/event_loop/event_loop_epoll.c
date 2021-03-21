@@ -5,6 +5,8 @@
 
 const char* event_loop_ctl_syscall_name = "epoll_ctl";
 
+const char* event_loop_run_syscall_name = "epoll_wait";
+
 const char* event_loop_create_loop_syscall_name = "epoll_create1";
 
 const int event_loop_sizeof_event = sizeof(struct epoll_event);
@@ -38,19 +40,13 @@ int event_loop_remove_write_fd(struct event_loop* loop, int fd, void* data) {
     return event_loop_ctl(loop, fd, data, EPOLL_CTL_DEL, EPOLLOUT);
 }
 
-void event_loop_run(struct event_loop* loop, void* cb_data, event_loop_event_cb event_cb,
-                    event_loop_notification_ready_cb notification_ready_cb) {
-    struct epoll_event *events = (struct epoll_event *)loop->events;
+int event_loop_run(struct event_loop* loop, void* cb_data, event_loop_event_cb event_cb,
+                   event_loop_notification_ready_cb notification_ready_cb) {
+    struct epoll_event* events = (struct epoll_event*)loop->events;
     while (1) {
         int n_ev = epoll_wait(loop->fd, events, loop->max_events, -1);
         if (n_ev < 0) {
-            // TODO: Handle error better.
-            LOG_FATAL("Server: epoll_wait() failed errno=%d (%s)", errno, errno_str(errno));
-        }
-
-        if (n_ev == 0) {
-            LOG_WARN("Server: Spurious wake-up from epoll_wait()");
-            continue;
+            return -1;
         }
 
         int should_process_notification = 0;
@@ -66,11 +62,17 @@ void event_loop_run(struct event_loop* loop, void* cb_data, event_loop_event_cb 
                 if (events[i].events & EPOLLOUT) {
                     event_flags |= evf_write;
                 }
-                event_cb(events[i].data.ptr, event_flags, cb_data);
+                int event_cb_status = event_cb(events[i].data.ptr, event_flags, cb_data);
+                if (event_cb_status != 0) {
+                    return event_cb_status;
+                }
             }
         }
         if (should_process_notification) {
-            notification_ready_cb(cb_data);
+            int notification_ready_cb_status = notification_ready_cb(cb_data);
+            if (notification_ready_cb_status != 0) {
+                return notification_ready_cb_status;
+            }
         }
     }
 }

@@ -49,13 +49,13 @@ struct http_write_cb_data {
     char res_hdrs[200];
 };
 
-static void http_404_write_cb(void* data, int err) {
+static void http_404_write_cb(void* data, UNUSED int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
     http_response_end(cb_data->req, 404);
     free(cb_data);
 }
 
-static void http_200_response_body_cb(void* data, int err) {
+static void http_200_response_body_cb(void* data, UNUSED int err) {
     struct http_write_cb_data* cb_data = (struct http_write_cb_data*)data;
     close_file(cb_data->server->cache, cb_data->file);
     http_response_end(cb_data->req, 200);

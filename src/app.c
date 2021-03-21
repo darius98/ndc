@@ -4,7 +4,7 @@
 #include "http_handlers/static_files/static_files_handler.h"
 #include "http_server/http_server.h"
 
-int always_should_handle(void* data, struct http_req* req) {
+int always_should_handle(UNUSED void* data, UNUSED struct http_req* req) {
     return 1;
 }
 

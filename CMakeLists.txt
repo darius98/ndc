@@ -17,7 +17,7 @@ else ()
 endif()
 
 function (apply_ndc_target_opts TARGET)
-    target_compile_options(${TARGET} PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+    target_compile_options(${TARGET} PRIVATE -Wall -Wextra -Wpedantic)
     target_include_directories(${TARGET} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     if (CMAKE_BUILD_TYPE STREQUAL "Release")
         target_compile_options(${TARGET} PRIVATE -flto)

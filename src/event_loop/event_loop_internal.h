@@ -7,8 +7,6 @@ NDC_BEGIN_DECLS
 
 extern const int event_loop_sizeof_event;
 
-extern const char* event_loop_create_loop_syscall_name;
-
 int event_loop_create_loop_fd();
 
 NDC_END_DECLS

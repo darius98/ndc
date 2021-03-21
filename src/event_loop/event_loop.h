@@ -12,6 +12,12 @@ struct event_loop {
     void* events;
 };
 
+extern const char* event_loop_create_loop_syscall_name;
+
+extern const char* event_loop_ctl_syscall_name;
+
+extern const char* event_loop_run_syscall_name;
+
 // Note: Aborts on failure. TODO: Don't.
 void event_loop_init(struct event_loop* loop, int max_events);
 
@@ -20,8 +26,6 @@ void event_loop_send_notification(struct event_loop* loop, const void* payload, 
 
 // Note: Aborts on failure. TODO: Don't.
 void event_loop_recv_notification(struct event_loop* loop, void* payload, int payload_size);
-
-extern const char* event_loop_ctl_syscall_name;
 
 int event_loop_add_read_fd(struct event_loop* loop, int fd, void* data);
 
@@ -38,12 +42,14 @@ enum event_loop_event_flags
     evf_eof = 4,
 };
 
-typedef void (*event_loop_notification_ready_cb)(void* cb_data);
-typedef void (*event_loop_event_cb)(void* data, int flags, void* cb_data);
+// Note: Should return a status > 0 for errors, since < 0 represents failure of kevent/epoll_wait syscalls.
+typedef int (*event_loop_notification_ready_cb)(void* cb_data);
 
-// Note: Aborts on failure. TODO: Don't.
-void event_loop_run(struct event_loop* loop, void* cb_data, event_loop_event_cb event_cb,
-                    event_loop_notification_ready_cb notification_ready_cb);
+// Note: Should return a status > 0 for errors, since < 0 represents failure of kevent/epoll_wait syscalls.
+typedef int (*event_loop_event_cb)(void* data, int flags, void* cb_data);
+
+int event_loop_run(struct event_loop* loop, void* cb_data, event_loop_event_cb event_cb,
+                   event_loop_notification_ready_cb notification_ready_cb);
 
 NDC_END_DECLS
 

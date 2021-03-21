@@ -140,7 +140,7 @@ static void tcp_write_loop_process_writes(struct tcp_conn* conn) {
     }
 }
 
-static void tcp_write_loop_process_notification(void* cb_data) {
+static int process_notification_cb(void* cb_data) {
     struct event_loop* w_loop = (struct event_loop*)cb_data;
     struct write_worker_notification notification;
     event_loop_recv_notification(w_loop, &notification, sizeof(notification));
@@ -163,19 +163,30 @@ static void tcp_write_loop_process_notification(void* cb_data) {
             LOG_ERROR("Failed to add connection to TCP write loop: %s failed errno=%d (%s)",
                       event_loop_ctl_syscall_name, errno, errno_str(errno));
             tcp_conn_dec_refcount(conn);
-            return;
+            return 0;
         }
         conn->wt_head = 0;
         conn->wt_tail = 0;
     }
+    return 0;
 }
 
-static void tcp_write_loop_process_event(void* data, int flags, void* cb_data) {
+static int process_event_cb(void* data, int flags, UNUSED void* cb_data) {
     if (flags & evf_write) {
         tcp_write_loop_process_writes((struct tcp_conn*)data);
     }
+    return 0;
 }
 
 void run_write_loop(struct event_loop* w_loop) {
-    event_loop_run(w_loop, w_loop, tcp_write_loop_process_event, tcp_write_loop_process_notification);
+    int run_status = event_loop_run(w_loop, w_loop, process_event_cb, process_notification_cb);
+    if (run_status != 0) {
+        if (run_status < 0) {
+            LOG_FATAL("TCP write loop failed: %s failed errno=%d (%s)", event_loop_run_syscall_name, errno,
+                      errno_str(errno));
+        } else {
+            LOG_FATAL("TCP write loop failed: event processing callback returned error code=%d (%s)", run_status,
+                      errno_str(run_status));
+        }
+    }
 }
