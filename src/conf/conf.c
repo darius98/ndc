@@ -6,8 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../logging/logging.h"
-
 static const char* get_config_file_path() {
     const char* c = getenv(NDC_CONF_FILE_ENV_VAR);
     if (c != 0) {
@@ -99,7 +97,7 @@ static int parse_conf_file(const char* path, struct conf_entry* entries, int n_e
         if (errno == ENOENT) {
             return 0;
         }
-        fprintf(stderr, "Failed to open conf file at %s (errno=%d %s)\n", path, errno, errno_str(errno));
+        fprintf(stderr, "Failed to open conf file at %s (errno=%d %s)\n", path, errno, strerror(errno));
         exit(EXIT_FAILURE);
     }
     char buffer[CONF_LINE_MAX_LEN + 1];
@@ -129,7 +127,7 @@ static void parse_int(const char* file, int lineno, int colno, const char* value
     long parsed = strtol(value, &end_ptr, 0);
     if (errno != 0) {
         fprintf(stderr, "Conf file %s:%d:%d invalid value (strtol() errno=%d %s).\n", file, lineno, colno, errno,
-                errno_str(errno));
+                strerror(errno));
         exit(EXIT_FAILURE);
     }
     if (end_ptr == value) {

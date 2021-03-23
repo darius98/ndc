@@ -14,9 +14,9 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Using LTO for release build")
 else ()
     message(STATUS "Using address & UB sanitizers for non-release build")
-endif()
+endif ()
 
-function (apply_ndc_target_opts TARGET)
+function(apply_ndc_target_opts TARGET)
     target_compile_options(${TARGET} PRIVATE -Wall -Wextra -Wpedantic)
     target_include_directories(${TARGET} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     if (CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -26,18 +26,18 @@ function (apply_ndc_target_opts TARGET)
         target_compile_definitions(${TARGET} PRIVATE -DNDC_LOG_FILE_AND_LINE -DNDC_LOG_LEVEL=0)
         target_compile_options(${TARGET} PRIVATE -fsanitize=address,undefined)
         target_link_options(${TARGET} PRIVATE -fsanitize=address,undefined)
-    endif()
-endfunction ()
+    endif ()
+endfunction()
 
-function (add_ndc_library TARGET)
+function(add_ndc_library TARGET)
     add_library(${TARGET} ${ARGN})
     apply_ndc_target_opts(${TARGET})
-endfunction ()
+endfunction()
 
-function (add_ndc_executable TARGET)
+function(add_ndc_executable TARGET)
     add_executable(${TARGET} ${ARGN})
     apply_ndc_target_opts(${TARGET})
-endfunction ()
+endfunction()
 
 set(ndc_event_loop_sources src/event_loop/event_loop.c)
 if (USE_KQUEUE)
@@ -48,13 +48,14 @@ elseif (USE_EPOLL)
     list(APPEND ndc_event_loop_sources src/event_loop/event_loop_epoll.c)
 else ()
     message(FATAL_ERROR "No suitable backend for event loop implementation (kqueue and epoll are supported)")
-endif()
+endif ()
 add_ndc_library(ndc_event_loop STATIC ${ndc_event_loop_sources})
 
 add_ndc_executable(ndc
         src/conf/conf.c
         src/http/handlers/static_files/file_cache.c
         src/http/handlers/static_files/static_files_handler.c
+        src/http/server/access_log.c
         src/http/server/http_req.c
         src/http/server/http_server.c
         src/tcp/tcp_server.c

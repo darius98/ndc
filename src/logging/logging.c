@@ -11,17 +11,12 @@
 #include <string.h>
 #include <time.h>
 
-#include "tcp/tcp_server.h"
-#include "http/server/http_req.h"
-
 static struct {
-    FILE* access_file;
-    FILE* server_log;
+    FILE* file;
     int min_level;
     int log_filename_and_lineno;
     pthread_mutex_t lock;
     char level_name[5];
-    char tm_buffer[20];  // Format is YYYY-MM-DD HH:mm:ss, of length 20
 } logging;
 
 static void log_backtrace(int fd) {
@@ -31,17 +26,17 @@ static void log_backtrace(int fd) {
 }
 
 static void handle_signal_log_fatal(int sig) {
-    if (logging.server_log != 0) {
-        fprintf(logging.server_log, "Killed by signal %d\n", sig);
-        if (fflush(logging.server_log) != 0) {
-            fprintf(logging.server_log, "fflush() failed errno=%d (%s)", errno, errno_str(errno));
+    if (logging.file != 0) {
+        fprintf(logging.file, "Killed by signal %d\n", sig);
+        if (fflush(logging.file) != 0) {
+            fprintf(logging.file, "fflush() failed errno=%d (%s)", errno, errno_str(errno));
         }
-        log_backtrace(fileno(logging.server_log));
+        log_backtrace(fileno(logging.file));
     }
     exit(128 + sig);
 }
 
-static void set_log_file(const char* desc, FILE** file) {
+void set_log_file(const char* desc, FILE** file) {
     if (strncasecmp(desc, "null", 4) == 0) {
         *file = 0;
     } else if (strncasecmp(desc, "stderr", 6) == 0) {
@@ -58,14 +53,13 @@ static void set_log_file(const char* desc, FILE** file) {
 }
 
 void init_logging(const struct logging_conf* conf) {
-    set_log_file(conf->access_log, &logging.access_file);
-    set_log_file(conf->server_log, &logging.server_log);
+    set_log_file(conf->server_log, &logging.file);
     logging.min_level = conf->min_level;
     logging.log_filename_and_lineno = conf->filename_and_lineno;
     int err = pthread_mutex_init(&logging.lock, 0);
     if (err != 0) {
-        if (logging.server_log != 0) {
-            fprintf(logging.server_log, "Failed to initialize logging mutex: pthread_mutex_init() error=%d\n", err);
+        if (logging.file != 0) {
+            fprintf(logging.file, "Failed to initialize logging mutex: pthread_mutex_init() error=%d\n", err);
         }
         exit(EXIT_FAILURE);
     }
@@ -74,7 +68,6 @@ void init_logging(const struct logging_conf* conf) {
     logging.level_name[LOG_LEVEL_WARN] = 'W';
     logging.level_name[LOG_LEVEL_ERROR] = 'E';
     logging.level_name[LOG_LEVEL_FATAL] = 'F';
-    logging.tm_buffer[19] = 0;
 
     // Install signal handlers
     signal(SIGBUS, handle_signal_log_fatal);
@@ -97,8 +90,8 @@ int internal_log_min_level() {
 static void lock_logs() {
     int err = pthread_mutex_lock(&logging.lock);
     if (err != 0) {
-        if (logging.server_log != 0) {
-            fprintf(logging.server_log, "Failed to lock logging mutex: pthread_mutex_lock() error=%d\n", err);
+        if (logging.file != 0) {
+            fprintf(logging.file, "Failed to lock logging mutex: pthread_mutex_lock() error=%d\n", err);
         }
         abort();
     }
@@ -107,18 +100,19 @@ static void lock_logs() {
 static void unlock_logs() {
     int err = pthread_mutex_unlock(&logging.lock);
     if (err != 0) {
-        if (logging.server_log != 0) {
-            fprintf(logging.server_log, "Failed to unlock logging mutex: pthread_mutex_unlock() error=%d\n", err);
+        if (logging.file != 0) {
+            fprintf(logging.file, "Failed to unlock logging mutex: pthread_mutex_unlock() error=%d\n", err);
         }
         abort();
     }
 }
 
-static void log_time(FILE* fp) {
+static __thread char tm_buffer[20];  // Format is YYYY-MM-DD HH:mm:ss, of length 20
+void log_time(FILE* fp) {
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
-    strftime(logging.tm_buffer, 19, "%F %T", gmtime(&now.tv_sec));
-    fprintf(fp, "%s.%03ld", logging.tm_buffer, now.tv_nsec / 1000000);
+    strftime(tm_buffer, 19, "%F %T", gmtime(&now.tv_sec));
+    fprintf(fp, "%s.%03ld", tm_buffer, now.tv_nsec / 1000000);
 }
 
 static __thread char strerror_buf[256];
@@ -134,11 +128,11 @@ const char* ipv4_str(uint32_t ipv4) {
 }
 
 static void log_msg_preamble(const char* filename, int lineno, int level) {
-    fprintf(logging.server_log, "[");
-    log_time(logging.server_log);
-    fprintf(logging.server_log, "] %c ", logging.level_name[level]);
+    fprintf(logging.file, "[");
+    log_time(logging.file);
+    fprintf(logging.file, "] %c ", logging.level_name[level]);
     if (logging.log_filename_and_lineno != 0 && filename != 0) {
-        fprintf(logging.server_log, "(%s:%d) ", filename, lineno);
+        fprintf(logging.file, "(%s:%d) ", filename, lineno);
     }
 }
 
@@ -149,35 +143,25 @@ static void log_msg_preamble(const char* filename, int lineno, int level) {
     fprintf(file, "\n")
 
 void internal_log_message(const char* filename, int lineno, int level, const char* fmt, ...) {
-    if (logging.server_log == 0) {
+    if (logging.file == 0) {
         return;
     }
     lock_logs();
     log_msg_preamble(filename, lineno, level);
-    LOG_MSG_BODY(logging.server_log, fmt);
+    LOG_MSG_BODY(logging.file, fmt);
     unlock_logs();
 }
 
 void internal_log_fatal_message(const char* filename, int lineno, int level, const char* fmt, ...) {
-    if (logging.server_log == 0) {
+    if (logging.file == 0) {
         abort();
     }
     lock_logs();
     log_msg_preamble(filename, lineno, level);
-    LOG_MSG_BODY(logging.server_log, fmt);
-    if (fflush(logging.server_log) != 0) {
-        fprintf(logging.server_log, "fflush() failed errno=%d (%s)\n", errno, errno_str(errno));
+    LOG_MSG_BODY(logging.file, fmt);
+    if (fflush(logging.file) != 0) {
+        fprintf(logging.file, "fflush() failed errno=%d (%s)\n", errno, errno_str(errno));
     }
-    log_backtrace(fileno(logging.server_log));
+    log_backtrace(fileno(logging.file));
     abort();
-}
-
-void log_access(struct http_req* req, int status) {
-    if (logging.access_file != 0) {
-        lock_logs();
-        fprintf(logging.access_file, "%s - - [", req_remote_ipv4(req));
-        log_time(logging.access_file);
-        fprintf(logging.access_file, "] \"%s %s %s\" %d\n", req_method(req), req_path(req), req_version(req), status);
-        unlock_logs();
-    }
 }

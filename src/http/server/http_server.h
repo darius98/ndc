@@ -1,6 +1,7 @@
 #ifndef NDC_HTTP_SERVER_HTTP_SERVER_H_
 #define NDC_HTTP_SERVER_HTTP_SERVER_H_
 
+#include "access_log.h"
 #include "conf/conf.h"
 #include "http_req.h"
 #include "tcp/tcp_server.h"
@@ -18,6 +19,7 @@ struct http_handler {
 
 struct http_server {
     struct tcp_server tcp_server;
+    struct access_log access_log;
 
     struct http_req* head;
     struct http_req* tail;

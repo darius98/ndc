@@ -95,7 +95,11 @@ static struct mapped_file* map_file(char* path) {
 
     file->fd = open(path, O_RDONLY);
     if (file->fd < 0) {
-        LOG_ERROR("Failed to open file %s: open() failed errno=%d (%s)", path, errno, errno_str(errno));
+        if (errno == EEXIST) {
+            LOG_DEBUG("File %s not found (open() errno=%d %s)", path, errno, errno_str(errno));
+        } else {
+            LOG_ERROR("Failed to open file %s: open() failed errno=%d (%s)", path, errno, errno_str(errno));
+        }
         free(file->path);
         free(file);
         return 0;
@@ -104,6 +108,16 @@ static struct mapped_file* map_file(char* path) {
     struct stat file_stat;
     if (fstat(file->fd, &file_stat) < 0) {
         LOG_ERROR("Failed to open file %s: fstat() failed errno=%d (%s)", path, errno, errno_str(errno));
+        if (close(file->fd) < 0) {
+            LOG_ERROR("Failed to close file %s: close() failed errno=%d (%s)", path, errno, errno_str(errno));
+        }
+        free(file->path);
+        free(file);
+        return 0;
+    }
+
+    if (!S_ISREG(file_stat.st_mode)) {
+        LOG_DEBUG("File %s not a regular file", path);
         if (close(file->fd) < 0) {
             LOG_ERROR("Failed to close file %s: close() failed errno=%d (%s)", path, errno, errno_str(errno));
         }

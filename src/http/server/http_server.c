@@ -5,9 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "access_log.h"
 #include "http_req.h"
-#include "tcp/tcp_server.h"
 #include "logging/logging.h"
+#include "tcp/tcp_server.h"
 
 static void http_server_push_req(struct http_server* server, struct http_req* req) {
     LOG_DEBUG("Pushing HTTP request %s %s from %s:%d", req_method(req), req_path(req), req_remote_ipv4(req),
@@ -267,6 +268,7 @@ static void on_conn_close(UNUSED void* data, struct tcp_conn* conn) {
 }
 
 void init_http_server(struct http_server* server, const struct conf* conf) {
+    init_access_log(&server->access_log, conf->logging.access_log);
     init_tcp_server(&server->tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_loop, server, on_conn_recv,
                     on_conn_close);
     server->head = 0;

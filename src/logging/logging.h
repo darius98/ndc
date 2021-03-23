@@ -2,6 +2,7 @@
 #define NDC_LOGGING_LOGGING_H_
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include "conf/conf.h"
 #include "utils/config.h"
@@ -16,9 +17,6 @@ NDC_BEGIN_DECLS
 
 void init_logging(const struct logging_conf* conf);
 
-struct http_req;
-void log_access(struct http_req* req, int status);
-
 int internal_log_min_level();
 
 void internal_log_message(const char* filename, int lineno, int level, const char* fmt, ...)
@@ -30,6 +28,10 @@ __attribute__((noreturn)) void internal_log_fatal_message(const char* filename, 
 const char* errno_str(int err);
 
 const char* ipv4_str(uint32_t ipv4);
+
+void set_log_file(const char* desc, FILE** file);
+
+void log_time(FILE* fp);
 
 // Default logging level is info.
 #ifndef NDC_LOG_LEVEL

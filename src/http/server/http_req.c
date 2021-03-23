@@ -2,9 +2,10 @@
 
 #include <stdlib.h>
 
+#include "access_log.h"
 #include "http_server.h"
-#include "tcp/tcp_server.h"
 #include "logging/logging.h"
+#include "tcp/tcp_server.h"
 
 int req_remote_port(struct http_req* req) {
     return req->conn->port;
