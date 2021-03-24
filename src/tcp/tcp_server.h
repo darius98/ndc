@@ -49,15 +49,9 @@ void init_tcp_server(struct tcp_server* server, int port, const struct tcp_serve
 
 void run_tcp_server_loop(struct tcp_server* server);
 
-void accept_tcp_conn(struct tcp_server* server);
-
-void recv_from_tcp_conn(struct tcp_conn* conn);
-
 void tcp_conn_inc_refcount(struct tcp_conn* conn);
 
 void tcp_conn_dec_refcount(struct tcp_conn* conn);
-
-void close_tcp_conn_in_loop(struct tcp_conn* conn);
 
 void close_tcp_conn(struct tcp_conn* conn);
 

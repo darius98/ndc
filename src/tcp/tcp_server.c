@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <stdatomic.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -16,6 +17,31 @@ static void* run_write_loop_in_thread(void* arg) {
     struct event_loop* w_loop = (struct event_loop*)arg;
     run_write_loop(w_loop);
     return 0;
+}
+
+static int listen_tcp(int port, int backlog) {
+    int fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd < 0) {
+        LOG_ERROR("socket() failed errno=%d (%s)", errno, errno_str(errno));
+        return -1;
+    }
+
+    struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(struct sockaddr_in));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_addr.sin_port = htons(port);
+    if (bind(fd, (const struct sockaddr*)&server_addr, sizeof(struct sockaddr_in)) < 0) {
+        LOG_ERROR("bind() failed errno=%d (%s)", errno, errno_str(errno));
+        return -1;
+    }
+
+    if (listen(fd, backlog) < 0) {
+        LOG_ERROR("listen() failed errno=%d (%s)", errno, errno_str(errno));
+        return -1;
+    }
+
+    return fd;
 }
 
 void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
@@ -48,15 +74,25 @@ static void close_and_log(int fd, uint32_t ipv4, int port) {
     }
 }
 
+static void close_tcp_conn_in_loop(struct tcp_conn* conn) {
+    conn->server->on_conn_closed(conn->server->data, conn);
+    if (event_loop_remove_read_fd(&conn->server->r_loop, conn->fd, conn) < 0) {
+        LOG_ERROR("Could not remove TCP connection %s:%d (fd=%d) from read loop, %s failed errno=%d (%s)",
+                  ipv4_str(conn->ipv4), conn->port, conn->fd, event_loop_ctl_syscall_name, errno, errno_str(errno));
+    }
+    tcp_write_loop_remove_conn(&conn->server->w_loop, conn);
+    LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
+    tcp_conn_dec_refcount(conn);
+}
+
 static int tcp_conn_buf_cap(struct tcp_server* server) {
     return (int)(server->conf->connection_buffer_size - sizeof(struct tcp_conn) - 1);
 }
 
-void accept_tcp_conn(struct tcp_server* server) {
-    int fd;
+static void accept_tcp_conn(struct tcp_server* server) {
     struct sockaddr_in client_addr;
     socklen_t client_addr_len = sizeof(struct sockaddr_in);
-    fd = accept(server->listen_fd, (struct sockaddr*)&client_addr, &client_addr_len);
+    int fd = accept(server->listen_fd, (struct sockaddr*)&client_addr, &client_addr_len);
     if (fd < 0) {
         LOG_ERROR("Failed to accept new TCP connection: accept() failed errno=%d (%s)", errno, errno_str(errno));
         return;
@@ -106,7 +142,7 @@ void accept_tcp_conn(struct tcp_server* server) {
     LOG_DEBUG("TCP client connected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
 }
 
-void recv_from_tcp_conn(struct tcp_conn* conn) {
+static void recv_from_tcp_conn(struct tcp_conn* conn) {
     if (atomic_load_explicit(&conn->is_closed, memory_order_acquire) != 0) {
         LOG_DEBUG("Connection %s:%d (fd=%d) is already closed, ignoring recv request", ipv4_str(conn->ipv4), conn->port,
                   conn->fd);
@@ -143,17 +179,6 @@ struct tcp_server_notification {
     void* data;
 };
 
-void close_tcp_conn_in_loop(struct tcp_conn* conn) {
-    conn->server->on_conn_closed(conn->server->data, conn);
-    if (event_loop_remove_read_fd(&conn->server->r_loop, conn->fd, conn) < 0) {
-        LOG_ERROR("Could not remove TCP connection %s:%d (fd=%d) from read loop, %s failed errno=%d (%s)",
-                  ipv4_str(conn->ipv4), conn->port, conn->fd, event_loop_ctl_syscall_name, errno, errno_str(errno));
-    }
-    tcp_write_loop_remove_conn(&conn->server->w_loop, conn);
-    LOG_DEBUG("TCP client disconnected: %s:%d (fd=%d)", ipv4_str(conn->ipv4), conn->port, conn->fd);
-    tcp_conn_dec_refcount(conn);
-}
-
 void close_tcp_conn(struct tcp_conn* conn) {
     if (atomic_exchange_explicit(&conn->is_closed, 1, memory_order_acq_rel) == 1) {
         LOG_DEBUG("Trying to close TCP connection that is already closed %s:%d (fd=%d)", ipv4_str(conn->ipv4),
@@ -176,21 +201,6 @@ static int process_notification_cb(void* cb_data) {
         close_tcp_conn_in_loop(conn);
     }
     return 0;
-}
-
-void tcp_conn_inc_refcount(struct tcp_conn* conn) {
-    atomic_fetch_add_explicit(&conn->ref_count, 1, memory_order_release);
-}
-
-void tcp_conn_dec_refcount(struct tcp_conn* conn) {
-    int ref_cnt = atomic_fetch_sub_explicit(&conn->ref_count, 1, memory_order_acq_rel);
-    if (ref_cnt == 1) {
-        LOG_DEBUG("Reclaiming memory and file descriptor for tcp connection %s:%d (fd=%d)", ipv4_str(conn->ipv4),
-                  conn->port, conn->fd);
-        free_tls(conn->tls);
-        close_and_log(conn->fd, conn->ipv4, conn->port);
-        free(conn);
-    }
 }
 
 static int process_event_cb(void* data, int flags, void* cb_data) {
@@ -220,5 +230,20 @@ void run_tcp_server_loop(struct tcp_server* server) {
             LOG_FATAL("TCP read event loop failed: event processing callback returned error code=%d (%s)", run_status,
                       errno_str(run_status));
         }
+    }
+}
+
+void tcp_conn_inc_refcount(struct tcp_conn* conn) {
+    atomic_fetch_add_explicit(&conn->ref_count, 1, memory_order_release);
+}
+
+void tcp_conn_dec_refcount(struct tcp_conn* conn) {
+    int ref_cnt = atomic_fetch_sub_explicit(&conn->ref_count, 1, memory_order_acq_rel);
+    if (ref_cnt == 1) {
+        LOG_DEBUG("Reclaiming memory and file descriptor for tcp connection %s:%d (fd=%d)", ipv4_str(conn->ipv4),
+                  conn->port, conn->fd);
+        free_tls(conn->tls);
+        close_and_log(conn->fd, conn->ipv4, conn->port);
+        free(conn);
     }
 }

@@ -15,8 +15,17 @@ void event_loop_init(struct event_loop* loop, int max_events) {
                   event_loop_create_loop_syscall_name, errno, errno_str(errno));
     }
 
-    if (make_nonblocking_pipe(loop->notify_pipe) < 0) {
-        LOG_FATAL("event_loop_init: failed to create notify pipe");
+    if (pipe(loop->notify_pipe) < 0) {
+        LOG_FATAL("event_loop_init: failed to create notify pipe, pipe() failed errno=%d (%s)", errno,
+                  errno_str(errno));
+    }
+
+    if (set_nonblocking(loop->notify_pipe[0]) < 0) {
+        LOG_FATAL("event_loop_init: failed to create notify pipe, could not set read end non-blocking");
+    }
+
+    if (set_nonblocking(loop->notify_pipe[1]) < 0) {
+        LOG_FATAL("event_loop_init: failed to create notify pipe, could not set write end non-blocking");
     }
 
     if (event_loop_add_read_fd(loop, loop->notify_pipe[0], &loop->notify_pipe[0]) < 0) {
