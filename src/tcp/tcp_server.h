@@ -5,8 +5,9 @@
 
 #include "conf/conf.h"
 #include "event_loop/event_loop.h"
-#include "tcp_write_loop.h"
+#include "http/server/http_req.h"
 #include "utils/config.h"
+#include "utils/ff_pthread.h"
 
 NDC_BEGIN_DECLS
 
@@ -48,6 +49,10 @@ void init_tcp_server(struct tcp_server* server, int port, const struct tcp_serve
                      on_conn_closed_cb on_conn_closed);
 
 void run_tcp_server_loop(struct tcp_server* server);
+
+/// Note: It is the responsibility of the callback to log an appropriate message for errors.
+void tcp_conn_add_write_task(struct tcp_conn* conn, const char* buf, int buf_len, struct http_req* req, void* data,
+                             write_task_cb cb);
 
 void tcp_conn_inc_refcount(struct tcp_conn* conn);
 

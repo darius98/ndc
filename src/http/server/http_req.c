@@ -36,7 +36,7 @@ char* req_body(struct http_req* req) {
 }
 
 void http_response_write(struct http_req* req, const char* buf, int buf_len, void* data, write_task_cb cb) {
-    tcp_write_loop_push(req->conn, buf, buf_len, req, data, cb);
+    tcp_conn_add_write_task(req->conn, buf, buf_len, req, data, cb);
 }
 
 void http_response_end(struct http_req* req, int status) {
