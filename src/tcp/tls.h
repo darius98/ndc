@@ -1,5 +1,5 @@
-#ifndef NDC_HTTP_SERVER_TLS_H_
-#define NDC_HTTP_SERVER_TLS_H_
+#ifndef NDC_TCP_TLS_H_
+#define NDC_TCP_TLS_H_
 
 #include "utils/config.h"
 

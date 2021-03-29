@@ -9,37 +9,14 @@
 #include <unistd.h>
 
 #include "logging/logging.h"
+#include "tcp_server_internal.h"
 #include "tls.h"
 #include "utils/fd.h"
 
-enum write_worker_notification_type
-{
-    ww_notify_add,
-    ww_notify_execute,
-    ww_notify_remove,
-};
-
-struct write_worker_notification {
-    enum write_worker_notification_type type;
-    struct tcp_conn* conn;
-    struct write_task* task;
-};
-
-struct write_task {
-    int buf_crs;
-    int buf_len;
-    const char* buf;
-    struct http_req* req;
-    void* data;
-    write_task_cb cb;
-    struct write_task* next;
-};
-
-static void complete_task(struct write_task* task, int err) {
+static void complete_task(struct tcp_conn* conn, struct tcp_write_task* task, int err) {
     if (err != 0) {
-        LOG_ERROR("Failed to complete write task for request %s %s from connection %s:%d error=%d (%s)",
-                  req_method(task->req), req_path(task->req), req_remote_ipv4(task->req), req_remote_port(task->req),
-                  err, errno_str(err));
+        LOG_ERROR("Failed to complete write task for connection %s:%d (fd=%d) error=%d (%s)", ipv4_str(conn->ipv4),
+                  conn->port, conn->fd, err, errno_str(err));
     }
     if (task->cb != 0) {
         task->cb(task->data, err);
@@ -48,28 +25,28 @@ static void complete_task(struct write_task* task, int err) {
 }
 
 static void pop_task(struct tcp_conn* conn, int err) {
-    struct write_task* task = conn->wt_head;
+    struct tcp_write_task* task = conn->wt_head;
     conn->wt_head = task->next;
     if (conn->wt_head == 0) {
         conn->wt_tail = 0;
     }
     task->next = 0;
-    complete_task(task, err);
+    complete_task(conn, task, err);
 }
 
 static void clear_task_list(struct tcp_conn* conn) {
-    struct write_task* task;
+    struct tcp_write_task* task;
     task = conn->wt_head;
     conn->wt_head = 0;
     conn->wt_tail = 0;
     while (task != 0) {
-        struct write_task* next = task->next;
-        complete_task(task, ECONNABORTED);
+        struct tcp_write_task* next = task->next;
+        complete_task(conn, task, ECONNABORTED);
         task = next;
     }
 }
 
-static int push_task(struct tcp_conn* conn, struct write_task* task) {
+static int push_task(struct tcp_conn* conn, struct tcp_write_task* task) {
     task->next = 0;
     if (conn->wt_tail != 0) {
         conn->wt_tail->next = task;
@@ -83,21 +60,21 @@ static int push_task(struct tcp_conn* conn, struct write_task* task) {
 }
 
 static void tcp_write_loop_process_writes(struct tcp_conn* conn) {
-    struct write_task* task = conn->wt_head;
+    struct tcp_write_task* task = conn->wt_head;
     while (task != 0) {
         ssize_t chunk_sz;
         if (conn->tls == 0) {
             chunk_sz = write(conn->fd, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
             if (chunk_sz < 0 && errno != EWOULDBLOCK) {
                 pop_task(conn, errno);
-                close_tcp_conn(conn);
+                tcp_conn_close(conn);
                 break;
             }
         } else {
             chunk_sz = write_tls(conn->tls, task->buf + task->buf_crs, task->buf_len - task->buf_crs);
             if (chunk_sz < 0) {
                 pop_task(conn, errno);
-                close_tcp_conn(conn);
+                tcp_conn_close(conn);
                 break;
             }
         }
@@ -114,10 +91,10 @@ static void tcp_write_loop_process_writes(struct tcp_conn* conn) {
 
 static int w_loop_process_notification_cb(void* cb_data) {
     struct event_loop* w_loop = (struct event_loop*)cb_data;
-    struct write_worker_notification notification;
+    struct tcp_write_loop_notification notification;
     event_loop_recv_notification(w_loop, &notification, sizeof(notification));
 
-    enum write_worker_notification_type type = notification.type;
+    enum tcp_write_loop_notification_type type = notification.type;
     struct tcp_conn* conn = notification.conn;
     if (type == ww_notify_execute) {
         if (push_task(conn, notification.task) == 0) {
@@ -190,29 +167,6 @@ static int listen_tcp(int port, int backlog) {
     return fd;
 }
 
-void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
-                     const struct tcp_write_loop_conf* w_loop_conf, void* data, on_conn_recv_cb on_conn_recv,
-                     on_conn_closed_cb on_conn_closed) {
-    event_loop_init(&server->r_loop, conf->events_batch_size);
-    event_loop_init(&server->w_loop, w_loop_conf->events_batch_size);
-    ff_pthread_create(&server->w_loop_thread, 0, run_write_loop_in_thread, &server->w_loop);
-    server->tls_ctx = init_tls(conf->tls_cert_pem);
-    server->conf = conf;
-    server->port = port;
-    server->data = data;
-    server->on_conn_recv = on_conn_recv;
-    server->on_conn_closed = on_conn_closed;
-
-    server->listen_fd = listen_tcp(port, conf->backlog);
-    if (server->listen_fd < 0) {
-        LOG_FATAL("Failed to initialize TCP server");
-    }
-    if (event_loop_add_read_fd(&server->r_loop, server->listen_fd, &server->listen_fd) < 0) {
-        LOG_FATAL("Failed to initialize TCP server: %s failed errno=%d (%s)", event_loop_ctl_syscall_name, errno,
-                  errno_str(errno));
-    }
-}
-
 static void close_and_log(int fd, uint32_t ipv4, int port) {
     if (close(fd) < 0) {
         LOG_ERROR("Failed to close file descriptor %d for connection %s:%d, errno=%d (%s)", fd, ipv4_str(ipv4), port,
@@ -222,14 +176,14 @@ static void close_and_log(int fd, uint32_t ipv4, int port) {
 
 static void tcp_write_loop_add_conn(struct event_loop* w_loop, struct tcp_conn* conn) {
     tcp_conn_inc_refcount(conn);
-    struct write_worker_notification notification;
+    struct tcp_write_loop_notification notification;
     notification.conn = conn;
     notification.type = ww_notify_add;
     event_loop_send_notification(w_loop, &notification, sizeof(notification));
 }
 
 static void tcp_write_loop_remove_conn(struct event_loop* w_loop, struct tcp_conn* conn) {
-    struct write_worker_notification notification;
+    struct tcp_write_loop_notification notification;
     notification.conn = conn;
     notification.type = ww_notify_remove;
     event_loop_send_notification(w_loop, &notification, sizeof(notification));
@@ -334,19 +288,12 @@ static void recv_from_tcp_conn(struct tcp_conn* conn) {
     }
 }
 
-struct tcp_server_notification {
-    enum
-    { ts_notify_close_conn, } type;
-    void* data;
-};
-
 static int process_notification_cb(void* cb_data) {
     struct tcp_server* server = (struct tcp_server*)cb_data;
-    struct tcp_server_notification notification;
+    struct tcp_read_loop_notification notification;
     event_loop_recv_notification(&server->r_loop, &notification, sizeof(notification));
     if (notification.type == ts_notify_close_conn) {
-        struct tcp_conn* conn = notification.data;
-        close_tcp_conn_in_loop(conn);
+        close_tcp_conn_in_loop(notification.conn);
     }
     return 0;
 }
@@ -368,7 +315,30 @@ static int process_event_cb(void* data, int flags, void* cb_data) {
     return 0;
 }
 
-void run_tcp_server_loop(struct tcp_server* server) {
+void tcp_server_init(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
+                     const struct tcp_write_loop_conf* w_loop_conf, void* data, tcp_server_recv_cb on_conn_recv,
+                     tcp_server_conn_closed_cb on_conn_closed) {
+    event_loop_init(&server->r_loop, conf->events_batch_size);
+    event_loop_init(&server->w_loop, w_loop_conf->events_batch_size);
+    ff_pthread_create(&server->w_loop_thread, 0, run_write_loop_in_thread, &server->w_loop);
+    server->tls_ctx = init_tls(conf->tls_cert_pem);
+    server->conf = conf;
+    server->port = port;
+    server->data = data;
+    server->on_conn_recv = on_conn_recv;
+    server->on_conn_closed = on_conn_closed;
+
+    server->listen_fd = listen_tcp(port, conf->backlog);
+    if (server->listen_fd < 0) {
+        LOG_FATAL("Failed to initialize TCP server");
+    }
+    if (event_loop_add_read_fd(&server->r_loop, server->listen_fd, &server->listen_fd) < 0) {
+        LOG_FATAL("Failed to initialize TCP server: %s failed errno=%d (%s)", event_loop_ctl_syscall_name, errno,
+                  errno_str(errno));
+    }
+}
+
+void tcp_server_run(struct tcp_server* server) {
     int run_status = event_loop_run(&server->r_loop, server, process_event_cb, process_notification_cb);
     if (run_status != 0) {
         if (run_status < 0) {
@@ -379,58 +349,4 @@ void run_tcp_server_loop(struct tcp_server* server) {
                       errno_str(run_status));
         }
     }
-}
-
-void tcp_conn_add_write_task(struct tcp_conn* conn, const char* buf, int buf_len, struct http_req* req, void* data,
-                             write_task_cb cb) {
-    struct write_task* task = malloc(sizeof(struct write_task));
-    if (task == 0) {
-        LOG_ERROR("Failed to allocate write task for connection %s:%d", ipv4_str(conn->ipv4), conn->port);
-        cb(data, -1);
-        close_tcp_conn(conn);
-        return;
-    }
-
-    task->buf_crs = 0;
-    task->buf_len = buf_len;
-    task->buf = buf;
-    task->req = req;
-    task->data = data;
-    task->cb = cb;
-
-    tcp_conn_inc_refcount(conn);  // To make sure the connection stays alive until push_task is executed.
-
-    struct write_worker_notification notification;
-    notification.conn = conn;
-    notification.task = task;
-    notification.type = ww_notify_execute;
-    event_loop_send_notification(&conn->server->w_loop, &notification, sizeof(notification));
-}
-
-void tcp_conn_inc_refcount(struct tcp_conn* conn) {
-    atomic_fetch_add_explicit(&conn->ref_count, 1, memory_order_release);
-}
-
-void tcp_conn_dec_refcount(struct tcp_conn* conn) {
-    int ref_cnt = atomic_fetch_sub_explicit(&conn->ref_count, 1, memory_order_acq_rel);
-    if (ref_cnt == 1) {
-        LOG_DEBUG("Reclaiming memory and file descriptor for tcp connection %s:%d (fd=%d)", ipv4_str(conn->ipv4),
-                  conn->port, conn->fd);
-        free_tls(conn->tls);
-        close_and_log(conn->fd, conn->ipv4, conn->port);
-        free(conn);
-    }
-}
-
-void close_tcp_conn(struct tcp_conn* conn) {
-    if (atomic_exchange_explicit(&conn->is_closed, 1, memory_order_acq_rel) == 1) {
-        LOG_DEBUG("Trying to close TCP connection that is already closed %s:%d (fd=%d)", ipv4_str(conn->ipv4),
-                  conn->port, conn->fd);
-        return;
-    }
-
-    struct tcp_server_notification notification;
-    notification.type = ts_notify_close_conn;
-    notification.data = conn;
-    event_loop_send_notification(&conn->server->r_loop, &notification, sizeof(notification));
 }

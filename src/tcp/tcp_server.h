@@ -1,11 +1,11 @@
-#ifndef NDC_HTTP_SERVER_TCP_SERVER_H_
-#define NDC_HTTP_SERVER_TCP_SERVER_H_
+#ifndef NDC_TCP_TCP_SERVER_H_
+#define NDC_TCP_TCP_SERVER_H_
 
 #include <stdint.h>
 
 #include "conf/conf.h"
 #include "event_loop/event_loop.h"
-#include "http/server/http_req.h"
+#include "tcp_conn.h"
 #include "utils/config.h"
 #include "utils/ff_pthread.h"
 
@@ -13,22 +13,8 @@ NDC_BEGIN_DECLS
 
 struct tcp_server;
 
-struct tcp_conn {
-    _Atomic(int) ref_count;
-    _Atomic(int) is_closed;
-    struct tcp_server* server;
-    int fd;
-    void* tls;
-    struct write_task* wt_head;
-    struct write_task* wt_tail;
-    void* user_data;
-    uint32_t ipv4;
-    int port;
-    char buf[];
-};
-
-typedef int (*on_conn_recv_cb)(void*, struct tcp_conn*, int);
-typedef void (*on_conn_closed_cb)(void*, struct tcp_conn*);
+typedef int (*tcp_server_recv_cb)(void*, struct tcp_conn*, int);
+typedef void (*tcp_server_conn_closed_cb)(void*, struct tcp_conn*);
 
 struct tcp_server {
     struct event_loop r_loop;
@@ -39,26 +25,16 @@ struct tcp_server {
     int port;
     void* tls_ctx;
     void* data;
-    on_conn_recv_cb on_conn_recv;
-    on_conn_closed_cb on_conn_closed;
+    tcp_server_recv_cb on_conn_recv;
+    tcp_server_conn_closed_cb on_conn_closed;
 };
 
 /// Initialize a TCP server. Note: Aborts on failure.
-void init_tcp_server(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
-                     const struct tcp_write_loop_conf* w_loop_conf, void* data, on_conn_recv_cb on_conn_recv,
-                     on_conn_closed_cb on_conn_closed);
+void tcp_server_init(struct tcp_server* server, int port, const struct tcp_server_conf* conf,
+                     const struct tcp_write_loop_conf* w_loop_conf, void* data, tcp_server_recv_cb on_conn_recv,
+                     tcp_server_conn_closed_cb on_conn_closed);
 
-void run_tcp_server_loop(struct tcp_server* server);
-
-/// Note: It is the responsibility of the callback to log an appropriate message for errors.
-void tcp_conn_add_write_task(struct tcp_conn* conn, const char* buf, int buf_len, struct http_req* req, void* data,
-                             write_task_cb cb);
-
-void tcp_conn_inc_refcount(struct tcp_conn* conn);
-
-void tcp_conn_dec_refcount(struct tcp_conn* conn);
-
-void close_tcp_conn(struct tcp_conn* conn);
+void tcp_server_run(struct tcp_server* server);
 
 NDC_END_DECLS
 

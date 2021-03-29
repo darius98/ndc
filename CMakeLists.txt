@@ -58,6 +58,7 @@ add_ndc_executable(ndc
         src/http/server/access_log.c
         src/http/server/http_req.c
         src/http/server/http_server.c
+        src/tcp/tcp_conn.c
         src/tcp/tcp_server.c
         src/tcp/tls.c
         src/logging/logging.c

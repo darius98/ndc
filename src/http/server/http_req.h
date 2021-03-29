@@ -2,11 +2,20 @@
 #define NDC_HTTP_SERVER_HTTP_REQ_H_
 
 #include "utils/config.h"
+#include "tcp/tcp_server.h"
 
 NDC_BEGIN_DECLS
 
 struct http_server;
-struct tcp_conn;
+
+enum http_req_parse_state {
+    req_parse_state_method = 0,
+    req_parse_state_path = 1,
+    req_parse_state_version = 2,
+    req_parse_state_headers = 3,
+    req_parse_state_body = 4,
+    req_parse_state_done = 5,
+};
 
 struct http_req {
     struct http_server* server;
@@ -14,15 +23,7 @@ struct http_req {
     /// The underlying TCP connection.
     struct tcp_conn* conn;
 
-    enum
-    {
-        req_parse_state_method = 0,
-        req_parse_state_path = 1,
-        req_parse_state_version = 2,
-        req_parse_state_headers = 3,
-        req_parse_state_body = 4,
-        req_parse_state_done = 5,
-    } parse_state;
+    enum http_req_parse_state parse_state;
 
     int path_offset;
     int version_offset;
@@ -59,9 +60,7 @@ char* req_headers(struct http_req* req);
 
 char* req_body(struct http_req* req);
 
-typedef void(*write_task_cb)(void*, int);
-
-void http_response_write(struct http_req* req, const char* buf, int buf_len, void* data, write_task_cb cb);
+void http_response_write(struct http_req* req, const char* buf, int buf_len, void* data, tcp_conn_write_cb cb);
 
 void http_response_end(struct http_req* req, int status);
 

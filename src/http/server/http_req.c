@@ -35,8 +35,8 @@ char* req_body(struct http_req* req) {
     return req->buf + req->body_offset;
 }
 
-void http_response_write(struct http_req* req, const char* buf, int buf_len, void* data, write_task_cb cb) {
-    tcp_conn_add_write_task(req->conn, buf, buf_len, req, data, cb);
+void http_response_write(struct http_req* req, const char* buf, int buf_len, void* data, tcp_conn_write_cb cb) {
+    tcp_conn_write(req->conn, buf, buf_len, data, cb);
 }
 
 void http_response_end(struct http_req* req, int status) {
@@ -49,6 +49,6 @@ void http_response_end(struct http_req* req, int status) {
 }
 
 void http_response_fail(struct http_req* req) {
-    close_tcp_conn(req->conn);
+    tcp_conn_close(req->conn);
     http_response_end(req, 0);
 }

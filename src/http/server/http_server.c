@@ -269,7 +269,7 @@ static void on_conn_close(UNUSED void* data, struct tcp_conn* conn) {
 
 void init_http_server(struct http_server* server, const struct conf* conf) {
     init_access_log(&server->access_log, conf->logging.access_log);
-    init_tcp_server(&server->tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_loop, server, on_conn_recv,
+    tcp_server_init(&server->tcp_server, 1337, &conf->tcp_server, &conf->tcp_write_loop, server, on_conn_recv,
                     on_conn_close);
     server->head = 0;
     server->tail = 0;
@@ -307,5 +307,5 @@ void install_http_handler(struct http_server* server, struct http_handler handle
 
 void start_http_server(struct http_server* server) {
     LOG_INFO("Running HTTP server on port %d", server->tcp_server.port);
-    run_tcp_server_loop(&server->tcp_server);
+    tcp_server_run(&server->tcp_server);
 }
