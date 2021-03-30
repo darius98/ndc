@@ -51,29 +51,48 @@ else ()
 endif ()
 add_ndc_library(ndc_event_loop STATIC ${ndc_event_loop_sources})
 
-add_ndc_executable(ndc
-        src/conf/conf.c
+add_ndc_library(ndc_conf STATIC
+        src/conf/conf.c)
+
+add_ndc_library(ndc_utils STATIC
+        src/utils/fd.c
+        src/utils/ff_pthread.c)
+
+add_ndc_library(ndc_logging STATIC
+        src/logging/logging.c)
+
+add_ndc_library(ndc_tcp STATIC
+        src/tcp/tcp_conn.c
+        src/tcp/tcp_server.c
+        src/tcp/tls.c)
+target_link_libraries(ndc_tcp PUBLIC
+        ndc_event_loop
+        ndc_logging
+        ndc_utils)
+# Compile options for the OpenSSL dependency
+if (APPLE)
+    message(STATUS "On MacOS, assuming OpenSSL was installed using brew into /usr/local/opt/openssl/")
+    target_include_directories(ndc_tcp PRIVATE /usr/local/opt/openssl/include)
+    target_link_directories(ndc_tcp PUBLIC /usr/local/opt/openssl/lib)
+    target_link_libraries(ndc_tcp PUBLIC ssl PUBLIC crypto)
+else ()
+    message(STATUS "On Linux, assuming OpenSSL was installed to a known location")
+    target_link_libraries(ndc_tcp PUBLIC ssl PUBLIC crypto)
+endif ()
+
+add_ndc_library(ndc_http
         src/http/handlers/static_files/file_cache.c
         src/http/handlers/static_files/static_files_handler.c
         src/http/server/access_log.c
         src/http/server/http_req.c
-        src/http/server/http_server.c
-        src/tcp/tcp_conn.c
-        src/tcp/tcp_server.c
-        src/tcp/tls.c
-        src/logging/logging.c
-        src/utils/fd.c
-        src/utils/ff_pthread.c
-        src/app.c
-        src/main.c)
-target_link_libraries(ndc PUBLIC ndc_event_loop)
-# Compile options for the OpenSSL dependency
-if (APPLE)
-    message(STATUS "On MacOS, assuming OpenSSL was installed using brew into /usr/local/opt/openssl/")
-    target_include_directories(ndc PRIVATE /usr/local/opt/openssl/include)
-    target_link_directories(ndc PRIVATE /usr/local/opt/openssl/lib)
-    target_link_libraries(ndc PRIVATE ssl PRIVATE crypto)
-else ()
-    message(STATUS "On Linux, assuming OpenSSL was installed to a known location")
-    target_link_libraries(ndc PRIVATE ssl PRIVATE crypto)
-endif ()
+        src/http/server/http_server.c)
+target_link_libraries(ndc_http PUBLIC
+        ndc_logging
+        ndc_tcp)
+
+add_ndc_executable(ndc src/main.c)
+target_link_libraries(ndc PUBLIC
+        ndc_conf
+        ndc_logging
+        ndc_utils
+        ndc_http)
